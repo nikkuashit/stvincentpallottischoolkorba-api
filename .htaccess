@@ -2,10 +2,10 @@
 
 # Enable Passenger
 PassengerEnabled On
-PassengerAppRoot /home/rmoktvux3m8e/stvincentpallottischoolkorba-api
+PassengerAppRoot /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api
 
 # Set Python version (adjust to match your cPanel Python version)
-PassengerPython /home/rmoktvux3m8e/virtualenv/stvincentpallottischoolkorba-api/3.13/bin/python3.13
+PassengerPython /home/rmoktvux3m8e/virtualenv/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/3.13/bin/python3.13
 
 # Handle static files
 <IfModule mod_rewrite.c>
