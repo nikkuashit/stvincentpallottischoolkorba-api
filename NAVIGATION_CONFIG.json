@@ -1,0 +1,200 @@
+{
+  "navigation": [
+    {
+      "label": "Home",
+      "path": "/",
+      "children": []
+    },
+    {
+      "label": "About",
+      "path": "/about",
+      "children": [
+        {
+          "label": "About Us",
+          "path": "/about-us"
+        },
+        {
+          "label": "Our Goal",
+          "path": "/goal"
+        },
+        {
+          "label": "Our Mission",
+          "path": "/mission"
+        },
+        {
+          "label": "Aims & Objectives",
+          "path": "/aims-objectives"
+        },
+        {
+          "label": "Principal's Message",
+          "path": "/principal-message"
+        }
+      ]
+    },
+    {
+      "label": "Infrastructure",
+      "path": "/infrastructure",
+      "children": [
+        {
+          "label": "Infrastructure Overview",
+          "path": "/infrastructure"
+        },
+        {
+          "label": "Library",
+          "path": "/library"
+        },
+        {
+          "label": "Science Laboratory",
+          "path": "/laboratory"
+        },
+        {
+          "label": "Computer Lab",
+          "path": "/computer-lab"
+        },
+        {
+          "label": "Our Staff",
+          "path": "/staff"
+        },
+        {
+          "label": "Smart Class",
+          "path": "/smart-class"
+        },
+        {
+          "label": "Playground & Sports",
+          "path": "/playground"
+        }
+      ]
+    },
+    {
+      "label": "Academics",
+      "path": "/academics",
+      "children": [
+        {
+          "label": "CBSE Affiliation",
+          "path": "/affiliation"
+        },
+        {
+          "label": "Subjects Offered",
+          "path": "/subject-offered"
+        },
+        {
+          "label": "Syllabus",
+          "path": "/syllabus"
+        },
+        {
+          "label": "Olympiads & Exams",
+          "path": "/olympiads-united-council-examination"
+        },
+        {
+          "label": "Scholarship",
+          "path": "/scholarship"
+        },
+        {
+          "label": "Parent-Teacher Meetings",
+          "path": "/ptm"
+        },
+        {
+          "label": "Curriculum",
+          "path": "/curriculum"
+        },
+        {
+          "label": "Co-curricular Activities",
+          "path": "/co-curricular"
+        },
+        {
+          "label": "Results",
+          "path": "/results"
+        }
+      ]
+    },
+    {
+      "label": "Admission",
+      "path": "/admissions",
+      "children": [
+        {
+          "label": "Admission Process",
+          "path": "/admission-2-2"
+        },
+        {
+          "label": "Admission Policy",
+          "path": "/admission-policy"
+        },
+        {
+          "label": "Fee Structure",
+          "path": "/fee-structure"
+        }
+      ]
+    },
+    {
+      "label": "Activities",
+      "path": "/activities",
+      "children": [
+        {
+          "label": "Sports & Games",
+          "path": "/sports-games"
+        },
+        {
+          "label": "Cultural Activities",
+          "path": "/cultural-activity"
+        },
+        {
+          "label": "Co-Scholastic Activities",
+          "path": "/co-scholastic-activities"
+        },
+        {
+          "label": "Celebrations & Events",
+          "path": "/celebration"
+        }
+      ]
+    },
+    {
+      "label": "Gallery",
+      "path": "/gallery",
+      "children": [
+        {
+          "label": "Photo Gallery",
+          "path": "/photo-gallery"
+        },
+        {
+          "label": "Virtual Tour",
+          "path": "/virtual-tour"
+        },
+        {
+          "label": "Annual Function",
+          "path": "/annual-function"
+        }
+      ]
+    },
+    {
+      "label": "Downloads",
+      "path": "/downloads",
+      "children": [
+        {
+          "label": "Transfer Certificate",
+          "path": "/tc"
+        },
+        {
+          "label": "TC Application Form",
+          "path": "/tc-apply-form"
+        },
+        {
+          "label": "Book List",
+          "path": "/book-list"
+        },
+        {
+          "label": "Mandatory Disclosure",
+          "path": "/mandatory-public-disclosure"
+        },
+        {
+          "label": "CBSE Documents",
+          "path": "/cbse-documents"
+        }
+      ]
+    },
+    {
+      "label": "Contact",
+      "path": "/contact",
+      "children": []
+    }
+  ]
+}
