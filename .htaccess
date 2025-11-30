@@ -1,0 +1,38 @@
+# cPanel/Passenger configuration for Django
+
+# Enable Passenger
+PassengerEnabled On
+PassengerAppRoot /home/username/stvincentpallottischoolkorba-api
+
+# Set Python version (adjust to match your cPanel Python version)
+PassengerPython /home/username/virtualenv/stvincentpallottischoolkorba-api/3.13/bin/python3.13
+
+# Handle static files
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Serve static files directly
+    RewriteCond %{REQUEST_URI} ^/static/ [NC]
+    RewriteRule ^(.*)$ - [L]
+
+    # Serve media files directly
+    RewriteCond %{REQUEST_URI} ^/media/ [NC]
+    RewriteRule ^(.*)$ - [L]
+
+    # Pass all other requests to Passenger
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ passenger_wsgi.py [L]
+</IfModule>
+
+# Set appropriate headers
+<IfModule mod_headers.c>
+    # CORS headers (adjust origin as needed)
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization"
+</IfModule>
+
+# Error handling
+ErrorDocument 404 /404.html
+ErrorDocument 500 /500.html
