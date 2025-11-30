@@ -2,4 +2,5 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/
-    - /bin/cp -R * $DEPLOYPATH
+    - /bin/mkdir -p $DEPLOYPATH
+    - /bin/rsync -av --exclude='.git' --exclude='*.pyc' --exclude='__pycache__' --exclude='db.sqlite3' --exclude='.env' . $DEPLOYPATH
