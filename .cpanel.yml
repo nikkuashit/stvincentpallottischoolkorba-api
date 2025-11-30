@@ -1,0 +1,5 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/rmoktvux3m8e/stvincentpallottischoolkorba-api/
+    - /bin/cp -R * $DEPLOYPATH
