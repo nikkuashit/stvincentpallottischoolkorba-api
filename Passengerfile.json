@@ -1,0 +1,8 @@
+{
+  "app_type": "wsgi",
+  "startup_file": "passenger_wsgi.py",
+  "python": "/home/rmoktvux3m8e/virtualenv/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/3.13/bin/python3.13",
+  "environment_variables": {
+    "DJANGO_SETTINGS_MODULE": "school_api.settings"
+  }
+}
