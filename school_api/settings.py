@@ -66,7 +66,6 @@ SITE_ID = 1
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # Serve static files in production
     "corsheaders.middleware.CorsMiddleware",  # CORS middleware - must be before CommonMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -301,8 +300,3 @@ REDOC_SETTINGS = {
 }
 
 
-# ==============================================================================
-# WHITENOISE CONFIGURATION - Production Static Files
-# ==============================================================================
-# Note: Whitenoise is configured via middleware only
-# Keeping storage simple to avoid issues
