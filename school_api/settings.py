@@ -304,17 +304,5 @@ REDOC_SETTINGS = {
 # ==============================================================================
 # WHITENOISE CONFIGURATION - Production Static Files
 # ==============================================================================
-
-# Use Django's default storage in development, whitenoise in production
-if DEBUG:
-    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
-else:
-    # Use whitenoise with manifest but not strict mode
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-# Whitenoise settings
-WHITENOISE_USE_FINDERS = True
-WHITENOISE_AUTOREFRESH = DEBUG
-WHITENOISE_MANIFEST_STRICT = False  # Don't fail on missing static references
-WHITENOISE_MAX_AGE = 0 if DEBUG else 31536000
-WHITENOISE_SKIP_COMPRESS_EXTENSIONS = []  # Compress all files
+# Note: Whitenoise is configured via middleware only
+# Keeping storage simple to avoid issues

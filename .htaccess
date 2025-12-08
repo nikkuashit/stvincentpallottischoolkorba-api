@@ -10,19 +10,18 @@ PassengerPython /home/rmoktvux3m8e/virtualenv/pallottischoolkorba.edu.in/stvince
 # Handle static files
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteBase /
 
-    # Serve static files directly
-    RewriteCond %{REQUEST_URI} ^/static/ [NC]
-    RewriteRule ^(.*)$ - [L]
+    # Serve static files from staticfiles directory
+    RewriteRule ^static/(.*)$ staticfiles/$1 [L]
 
-    # Serve media files directly
-    RewriteCond %{REQUEST_URI} ^/media/ [NC]
-    RewriteRule ^(.*)$ - [L]
+    # Serve media files from media directory
+    RewriteRule ^media/(.*)$ media/$1 [L]
 
-    # Pass all other requests to Passenger
+    # Pass all other requests to Passenger (Django app)
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ passenger_wsgi.py [L]
+    RewriteRule ^(.*)$ passenger_wsgi.py [L,QSA]
 </IfModule>
 
 # Set appropriate headers
