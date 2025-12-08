@@ -306,4 +306,19 @@ REDOC_SETTINGS = {
 # ==============================================================================
 # Whitenoise serves static files with compression and caching
 
+# Tell Django to use whitenoise's storage backend
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
+# Whitenoise configuration
+WHITENOISE_AUTOREFRESH = DEBUG
+WHITENOISE_USE_FINDERS = DEBUG
+WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
+
 
