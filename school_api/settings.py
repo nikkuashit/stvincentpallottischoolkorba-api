@@ -142,11 +142,22 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Additional locations of static files
+STATICFILES_DIRS = [
+    # Add any additional static directories here if needed
+]
+
+# Static file finders - how Django locates static files
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
+
 # Media files
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
@@ -295,11 +306,18 @@ REDOC_SETTINGS = {
 # ==============================================================================
 
 # Simplified static file serving for production
-# Whitenoise serves static files efficiently without needing a separate web server
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+# Using CompressedStaticFilesStorage (no manifest) to avoid 404 issues
+# This is more forgiving and doesn't fail if referenced static files are missing
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # Allow whitenoise to use Django's STATICFILES_FINDERS
 WHITENOISE_USE_FINDERS = True
 
 # Auto-refresh static files in development
 WHITENOISE_AUTOREFRESH = DEBUG
+
+# Don't fail on missing static file references
+WHITENOISE_MANIFEST_STRICT = False
+
+# Keep files cached for 1 year (except in DEBUG mode)
+WHITENOISE_MAX_AGE = 0 if DEBUG else 31536000
