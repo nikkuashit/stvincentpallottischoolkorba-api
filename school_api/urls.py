@@ -72,9 +72,12 @@ urlpatterns = [
     path('api/cms/', include('cms.urls')),
 ]
 
-# Serve media files in development
+# Serve media files (user uploads)
+# Whitenoise handles static files, but media files need to be served separately
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# In development, also serve static files via Django
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
 # Customize admin site

@@ -66,6 +66,7 @@ SITE_ID = 1
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # Serve static files in production
     "corsheaders.middleware.CorsMiddleware",  # CORS middleware - must be before CommonMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -287,3 +288,18 @@ SWAGGER_SETTINGS = {
 REDOC_SETTINGS = {
     'LAZY_RENDERING': True,
 }
+
+
+# ==============================================================================
+# WHITENOISE CONFIGURATION - Production Static Files
+# ==============================================================================
+
+# Simplified static file serving for production
+# Whitenoise serves static files efficiently without needing a separate web server
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Allow whitenoise to use Django's STATICFILES_FINDERS
+WHITENOISE_USE_FINDERS = True
+
+# Auto-refresh static files in development
+WHITENOISE_AUTOREFRESH = DEBUG
