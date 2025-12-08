@@ -3,30 +3,33 @@
 # Enable Passenger
 PassengerEnabled On
 PassengerAppRoot /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api
+PassengerPython /home/rmoktvux3m8e/virtualenv/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/3.11/bin/python3.11
 
-# Set Python version (adjust to match your cPanel Python version)
-PassengerPython /home/rmoktvux3m8e/virtualenv/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/3.13/bin/python3.13
+# Serve static files directly using Alias
+Alias /static /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/staticfiles
+Alias /media /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/media
 
-# Handle static files
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /
+# Static files directory configuration
+<Directory /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/staticfiles>
+    PassengerEnabled off
+    Options -Indexes +FollowSymLinks
+    AllowOverride None
+    Require all granted
+    <IfModule mod_headers.c>
+        Header set Cache-Control "max-age=31536000, public"
+    </IfModule>
+</Directory>
 
-    # Serve static files from staticfiles directory
-    RewriteRule ^static/(.*)$ staticfiles/$1 [L]
+# Media files directory configuration
+<Directory /home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/stvincentpallottischoolkorba-api/media>
+    PassengerEnabled off
+    Options -Indexes +FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
 
-    # Serve media files from media directory
-    RewriteRule ^media/(.*)$ media/$1 [L]
-
-    # Pass all other requests to Passenger (Django app)
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^(.*)$ passenger_wsgi.py [L,QSA]
-</IfModule>
-
-# Set appropriate headers
+# CORS headers for API
 <IfModule mod_headers.c>
-    # CORS headers (adjust origin as needed)
     Header set Access-Control-Allow-Origin "*"
     Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, PATCH, OPTIONS"
     Header set Access-Control-Allow-Headers "Content-Type, Authorization"
