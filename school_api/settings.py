@@ -224,6 +224,7 @@ REST_AUTH = {
     'JWT_AUTH_HTTPONLY': False,  # Set to True in production
     'JWT_AUTH_COOKIE': 'auth-token',
     'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
+    'USER_DETAILS_SERIALIZER': 'accounts.serializers.JWTUserDetailsSerializer',
 }
 
 

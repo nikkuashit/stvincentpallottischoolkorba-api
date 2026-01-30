@@ -7,6 +7,17 @@ from django.contrib.auth.models import User
 from .models import Role, UserProfile
 
 
+class JWTUserDetailsSerializer(serializers.ModelSerializer):
+    """Custom serializer for dj-rest-auth JWT login response.
+    Includes is_staff and is_superuser for role-based access control.
+    """
+
+    class Meta:
+        model = User
+        fields = ['pk', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser']
+        read_only_fields = ['pk', 'is_staff', 'is_superuser']
+
+
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for Role model"""
 
