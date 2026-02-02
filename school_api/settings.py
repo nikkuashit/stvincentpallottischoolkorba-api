@@ -232,23 +232,8 @@ REST_AUTH = {
 # CORS CONFIGURATION
 # ==============================================================================
 
-# Allow all origins in development only
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-
-# Production CORS settings
-if not DEBUG:
-    FRONTEND_URL = config('FRONTEND_URL', default='https://pallottischoolkorba.edu.in')
-    CORS_ALLOWED_ORIGINS = [
-        FRONTEND_URL,
-        'https://pallottischoolkorba.edu.in',
-        'https://www.pallottischoolkorba.edu.in',
-    ]
-else:
-    # Development CORS settings
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ]
+# Allow all origins
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
 
