@@ -15,6 +15,7 @@ pillow = "*"
 django-allauth = "*"
 requests = "*"
 djangorestframework-filters = "*"
+whitenoise = "*"
 
 [dev-packages]
 
