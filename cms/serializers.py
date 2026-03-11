@@ -1,7 +1,7 @@
 """Serializers for CMS App"""
 
 from rest_framework import serializers
-from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document
+from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document, Slider, Marquee
 
 
 class NavigationMenuSerializer(serializers.ModelSerializer):
@@ -17,12 +17,21 @@ class NavigationMenuSerializer(serializers.ModelSerializer):
             'show_in_landing_page', 'display_order', 'is_active',
             'created_at', 'updated_at', 'children'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
 
     def get_children(self, obj):
         """Get child menu items"""
         children = obj.children.filter(is_active=True)
         return NavigationMenuSerializer(children, many=True, context=self.context).data
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -37,7 +46,16 @@ class SectionSerializer(serializers.ModelSerializer):
             'show_in_landing_page', 'landing_page_order',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
 
 
 class LandingPageSectionSerializer(serializers.ModelSerializer):
@@ -68,7 +86,16 @@ class PageSerializer(serializers.ModelSerializer):
             'hero_image', 'meta_title', 'meta_description', 'meta_keywords',
             'is_published', 'published_at', 'created_at', 'updated_at', 'sections'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
 
 
 class GalleryImageSerializer(serializers.ModelSerializer):
@@ -80,7 +107,15 @@ class GalleryImageSerializer(serializers.ModelSerializer):
             'id', 'organization', 'gallery', 'title', 'description', 'image',
             'display_order', 'uploaded_by', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # Auto-assign default organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
 
 
 class GallerySerializer(serializers.ModelSerializer):
@@ -95,11 +130,20 @@ class GallerySerializer(serializers.ModelSerializer):
             'cover_image', 'event', 'created_by', 'is_published',
             'published_date', 'created_at', 'updated_at', 'images', 'image_count'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
 
     def get_image_count(self, obj):
         """Get total number of images in gallery"""
         return obj.images.count()
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -141,3 +185,53 @@ class DocumentSerializer(serializers.ModelSerializer):
             except Page.DoesNotExist:
                 raise serializers.ValidationError({'page_slug': f'Page with slug "{page_slug}" not found'})
         return attrs
+
+
+class SliderSerializer(serializers.ModelSerializer):
+    """Serializer for Slider model"""
+
+    class Meta:
+        model = Slider
+        fields = [
+            'id', 'organization', 'school', 'title', 'subtitle', 'description',
+            'image', 'cta_text', 'cta_link', 'display_order', 'is_active',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)
+
+
+class MarqueeSerializer(serializers.ModelSerializer):
+    """Serializer for Marquee model"""
+    is_new = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Marquee
+        fields = [
+            'id', 'organization', 'school', 'text', 'link', 'display_order',
+            'is_active', 'start_date', 'end_date', 'created_at', 'updated_at', 'is_new'
+        ]
+        read_only_fields = ['id', 'organization', 'school', 'created_at', 'updated_at']
+
+    def get_is_new(self, obj):
+        """Return True if marquee was created within the last 10 days"""
+        from django.utils import timezone
+        from datetime import timedelta
+        return obj.created_at >= timezone.now() - timedelta(days=10)
+
+    def create(self, validated_data):
+        # Auto-assign default school and organization
+        from tenants.models import School
+        school = School.objects.first()
+        if school:
+            validated_data['school'] = school
+            validated_data['organization'] = school.organization
+        return super().create(validated_data)

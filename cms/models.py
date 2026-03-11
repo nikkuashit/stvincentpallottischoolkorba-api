@@ -341,3 +341,83 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Slider(models.Model):
+    """Hero slider/carousel for landing page"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        'tenants.Organization',
+        on_delete=models.CASCADE,
+        related_name='sliders'
+    )
+    school = models.ForeignKey(
+        'tenants.School',
+        on_delete=models.CASCADE,
+        related_name='sliders'
+    )
+
+    title = models.CharField(max_length=255)
+    subtitle = models.CharField(max_length=500, blank=True)
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to='sliders/')
+
+    # Call to action
+    cta_text = models.CharField(max_length=100, blank=True)
+    cta_link = models.CharField(max_length=255, blank=True)
+
+    # Display settings
+    display_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', 'created_at']
+        indexes = [
+            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['display_order']),
+        ]
+
+    def __str__(self):
+        return f"{self.title} - {self.school.name}"
+
+
+class Marquee(models.Model):
+    """Scrolling announcement/marquee text"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.ForeignKey(
+        'tenants.Organization',
+        on_delete=models.CASCADE,
+        related_name='marquees'
+    )
+    school = models.ForeignKey(
+        'tenants.School',
+        on_delete=models.CASCADE,
+        related_name='marquees'
+    )
+
+    text = models.TextField()
+    link = models.CharField(max_length=255, blank=True)
+
+    # Display settings
+    display_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    # Optional scheduling
+    start_date = models.DateTimeField(null=True, blank=True)
+    end_date = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', '-created_at']
+        indexes = [
+            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['start_date', 'end_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.text[:50]}... - {self.school.name}"

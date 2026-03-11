@@ -1,14 +1,15 @@
 """ViewSets for CMS App"""
 
+from django.db import models
 from rest_framework import viewsets, filters, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document
+from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document, Slider, Marquee
 from .serializers import (
     NavigationMenuSerializer, PageSerializer, SectionSerializer,
     GallerySerializer, GalleryImageSerializer, DocumentSerializer,
-    LandingPageSectionSerializer
+    LandingPageSectionSerializer, SliderSerializer, MarqueeSerializer
 )
 from .permissions import IsAdminOrStaffOrReadOnly
 
@@ -253,33 +254,114 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+class SliderViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Slider
+    GET: Public access
+    POST/PUT/PATCH/DELETE: Admin/Staff only
+    """
+    queryset = Slider.objects.all()
+    serializer_class = SliderSerializer
+    permission_classes = [IsAdminOrStaffOrReadOnly]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'subtitle', 'description']
+    ordering_fields = ['display_order', 'created_at']
+    ordering = ['display_order', 'created_at']
+
+    def get_queryset(self):
+        """Filter sliders based on query parameters"""
+        queryset = super().get_queryset()
+
+        # Filter by school
+        school_id = self.request.query_params.get('school', None)
+        if school_id:
+            queryset = queryset.filter(school_id=school_id)
+
+        # Filter by is_active
+        is_active = self.request.query_params.get('is_active', None)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+
+        # Show only active sliders for non-staff users
+        if not self.request.user.is_authenticated or not self.request.user.is_staff:
+            queryset = queryset.filter(is_active=True)
+
+        return queryset
+
+
+class MarqueeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Marquee
+    GET: Public access
+    POST/PUT/PATCH/DELETE: Admin/Staff only
+    """
+    queryset = Marquee.objects.all()
+    serializer_class = MarqueeSerializer
+    permission_classes = [IsAdminOrStaffOrReadOnly]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['text']
+    ordering_fields = ['display_order', 'created_at']
+    ordering = ['display_order', '-created_at']
+
+    def get_queryset(self):
+        """Filter marquees based on query parameters"""
+        from django.utils import timezone
+
+        queryset = super().get_queryset()
+
+        # Filter by school
+        school_id = self.request.query_params.get('school', None)
+        if school_id:
+            queryset = queryset.filter(school_id=school_id)
+
+        # Filter by is_active
+        is_active = self.request.query_params.get('is_active', None)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+
+        # Show only active and scheduled marquees for non-staff users
+        if not self.request.user.is_authenticated or not self.request.user.is_staff:
+            now = timezone.now()
+            queryset = queryset.filter(is_active=True)
+            queryset = queryset.filter(
+                models.Q(start_date__isnull=True) | models.Q(start_date__lte=now)
+            ).filter(
+                models.Q(end_date__isnull=True) | models.Q(end_date__gte=now)
+            )
+
+        return queryset
+
+
 class LandingPageView(APIView):
     """
     API endpoint to get all sections marked for landing page display.
-    Returns sections ordered by landing_page_order for a specific school.
+    Returns sections ordered by landing_page_order.
 
-    GET /api/cms/landing-page/?school_slug=<slug>
+    GET /api/cms/landing-page/
+    Optional: ?school_slug=<slug> or ?school=<id> for multi-school scenarios
     """
     permission_classes = [AllowAny]
 
     def get(self, request):
         from tenants.models import School
 
-        # Get school by slug or ID
+        # Get school by slug or ID, or default to first school
         school_slug = request.query_params.get('school_slug')
         school_id = request.query_params.get('school')
-
-        if not school_slug and not school_id:
-            return Response(
-                {'error': 'Either school_slug or school query parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
 
         try:
             if school_slug:
                 school = School.objects.get(slug=school_slug)
-            else:
+            elif school_id:
                 school = School.objects.get(id=school_id)
+            else:
+                # Default to first school (single-school scenario)
+                school = School.objects.first()
+                if not school:
+                    return Response(
+                        {'error': 'No school configured'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
         except School.DoesNotExist:
             return Response(
                 {'error': 'School not found'},

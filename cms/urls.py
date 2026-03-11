@@ -5,7 +5,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     NavigationMenuViewSet, PageViewSet, SectionViewSet,
     GalleryViewSet, GalleryImageViewSet, DocumentViewSet,
-    LandingPageView
+    LandingPageView, SliderViewSet, MarqueeViewSet
 )
 
 # Create router and register viewsets
@@ -16,6 +16,8 @@ router.register(r'sections', SectionViewSet, basename='section')
 router.register(r'galleries', GalleryViewSet, basename='gallery')
 router.register(r'gallery-images', GalleryImageViewSet, basename='galleryimage')
 router.register(r'documents', DocumentViewSet, basename='document')
+router.register(r'sliders', SliderViewSet, basename='slider')
+router.register(r'marquees', MarqueeViewSet, basename='marquee')
 
 # Custom URL pattern for pages to handle slugs with slashes
 # Note: This pattern should NOT match UUIDs (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)

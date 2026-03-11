@@ -70,6 +70,9 @@ urlpatterns = [
 
     # CMS API endpoints
     path('api/cms/', include('cms.urls')),
+
+    # Communications API endpoints (News, Events, Announcements)
+    path('api/communications/', include('communications.urls')),
 ]
 
 # Serve static and media files
