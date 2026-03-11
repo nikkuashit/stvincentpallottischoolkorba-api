@@ -97,7 +97,7 @@ class Page(models.Model):
     )
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField()
+    slug = models.CharField(max_length=255, db_index=True)  # CharField to allow slashes in paths
     description = models.TextField(blank=True)
     hero_image = models.ImageField(upload_to='pages/heroes/', null=True, blank=True)
 
@@ -158,6 +158,8 @@ class Section(models.Model):
             ('news', 'News'),
             ('events', 'Events'),
             ('contact', 'Contact'),
+            ('principal', 'Principal Message'),
+            ('courses', 'Courses'),
             ('custom', 'Custom')
         ],
         default='custom'
@@ -172,6 +174,10 @@ class Section(models.Model):
     background_color = models.CharField(max_length=7, blank=True)
     background_image = models.ImageField(upload_to='sections/backgrounds/', null=True, blank=True)
 
+    # Landing page settings
+    show_in_landing_page = models.BooleanField(default=False)
+    landing_page_order = models.IntegerField(default=0, help_text="Order of section on landing page")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -181,6 +187,7 @@ class Section(models.Model):
         indexes = [
             models.Index(fields=['organization', 'school', 'is_visible']),
             models.Index(fields=['page', 'display_order']),
+            models.Index(fields=['organization', 'school', 'show_in_landing_page', 'landing_page_order']),
         ]
 
     def __str__(self):
@@ -283,15 +290,13 @@ class GalleryImage(models.Model):
 class Document(models.Model):
     """Document management"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
+    page = models.ForeignKey(
+        Page,
         on_delete=models.CASCADE,
-        related_name='documents'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='documents'
+        related_name='documents',
+        null=True,
+        blank=True,
+        help_text="Optional: Link document to a specific page"
     )
 
     title = models.CharField(max_length=255)
@@ -316,6 +321,7 @@ class Document(models.Model):
         'accounts.UserProfile',
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         related_name='uploaded_documents'
     )
 
@@ -328,8 +334,9 @@ class Document(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_public']),
+            models.Index(fields=['is_public']),
             models.Index(fields=['category']),
+            models.Index(fields=['page']),
         ]
 
     def __str__(self):

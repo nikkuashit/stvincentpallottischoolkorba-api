@@ -4,7 +4,8 @@ from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from .views import (
     NavigationMenuViewSet, PageViewSet, SectionViewSet,
-    GalleryViewSet, GalleryImageViewSet, DocumentViewSet
+    GalleryViewSet, GalleryImageViewSet, DocumentViewSet,
+    LandingPageView
 )
 
 # Create router and register viewsets
@@ -29,5 +30,6 @@ page_detail_urlpatterns = [
 
 # Router URLs first (handles UUIDs), then custom slug patterns
 urlpatterns = [
+    path('landing-page/', LandingPageView.as_view(), name='landing-page'),
     path('', include(router.urls)),
 ] + page_detail_urlpatterns

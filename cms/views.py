@@ -1,10 +1,14 @@
 """ViewSets for CMS App"""
 
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
 from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document
 from .serializers import (
     NavigationMenuSerializer, PageSerializer, SectionSerializer,
-    GallerySerializer, GalleryImageSerializer, DocumentSerializer
+    GallerySerializer, GalleryImageSerializer, DocumentSerializer,
+    LandingPageSectionSerializer
 )
 from .permissions import IsAdminOrStaffOrReadOnly
 
@@ -226,10 +230,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
 
         # Manual filtering
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
         category = self.request.query_params.get('category', None)
         if category:
             queryset = queryset.filter(category=category)
@@ -242,7 +242,64 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if is_public is not None:
             queryset = queryset.filter(is_public=is_public.lower() == 'true')
 
+        # Filter by page slug
+        page_slug = self.request.query_params.get('page_slug', None)
+        if page_slug:
+            queryset = queryset.filter(page__slug=page_slug)
+
         if not self.request.user.is_authenticated or not self.request.user.is_staff:
             queryset = queryset.filter(is_public=True)
 
         return queryset
+
+
+class LandingPageView(APIView):
+    """
+    API endpoint to get all sections marked for landing page display.
+    Returns sections ordered by landing_page_order for a specific school.
+
+    GET /api/cms/landing-page/?school_slug=<slug>
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from tenants.models import School
+
+        # Get school by slug or ID
+        school_slug = request.query_params.get('school_slug')
+        school_id = request.query_params.get('school')
+
+        if not school_slug and not school_id:
+            return Response(
+                {'error': 'Either school_slug or school query parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            if school_slug:
+                school = School.objects.get(slug=school_slug)
+            else:
+                school = School.objects.get(id=school_id)
+        except School.DoesNotExist:
+            return Response(
+                {'error': 'School not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get all sections marked for landing page, ordered by landing_page_order
+        sections = Section.objects.filter(
+            school=school,
+            show_in_landing_page=True,
+            is_visible=True
+        ).select_related('page').order_by('landing_page_order', 'display_order')
+
+        serializer = LandingPageSectionSerializer(sections, many=True)
+
+        return Response({
+            'school': {
+                'id': str(school.id),
+                'name': school.name,
+                'slug': school.slug
+            },
+            'sections': serializer.data
+        })

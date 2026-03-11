@@ -18,7 +18,7 @@ class NavigationMenuAdmin(admin.ModelAdmin):
 class SectionInline(admin.TabularInline):
     model = Section
     extra = 0
-    fields = ['title', 'slug', 'section_type', 'display_order', 'is_visible']
+    fields = ['title', 'slug', 'section_type', 'display_order', 'is_visible', 'show_in_landing_page', 'landing_page_order']
     prepopulated_fields = {'slug': ('title',)}
 
 
@@ -35,12 +35,31 @@ class PageAdmin(admin.ModelAdmin):
 
 @admin.register(Section)
 class SectionAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'page', 'section_type', 'display_order', 'is_visible', 'created_at']
-    list_filter = ['section_type', 'is_visible', 'school', 'page']
+    list_display = ['title', 'school', 'page', 'section_type', 'display_order', 'is_visible', 'show_in_landing_page', 'landing_page_order', 'created_at']
+    list_filter = ['section_type', 'is_visible', 'show_in_landing_page', 'school', 'page']
     search_fields = ['title', 'slug']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
     ordering = ['page', 'display_order']
+    fieldsets = (
+        (None, {
+            'fields': ('organization', 'school', 'page', 'title', 'slug', 'section_type')
+        }),
+        ('Content', {
+            'fields': ('content',)
+        }),
+        ('Display Settings', {
+            'fields': ('display_order', 'is_visible', 'background_color', 'background_image')
+        }),
+        ('Landing Page', {
+            'fields': ('show_in_landing_page', 'landing_page_order'),
+            'description': 'Configure how this section appears on the landing page'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 class GalleryImageInline(admin.TabularInline):
@@ -76,8 +95,8 @@ class GalleryImageAdmin(admin.ModelAdmin):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'category', 'file_type', 'file_size_mb', 'is_public', 'download_count', 'uploaded_by']
-    list_filter = ['category', 'is_public', 'file_type', 'school', 'organization']
+    list_display = ['title', 'page', 'category', 'file_type', 'file_size_mb', 'is_public', 'download_count', 'uploaded_by']
+    list_filter = ['category', 'is_public', 'file_type', 'page']
     search_fields = ['title', 'description']
     readonly_fields = ['created_at', 'updated_at', 'download_count', 'file_size']
 

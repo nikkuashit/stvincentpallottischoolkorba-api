@@ -33,14 +33,33 @@ class SectionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'organization', 'school', 'page', 'title', 'slug',
             'section_type', 'content', 'display_order', 'is_visible',
-            'background_color', 'background_image', 'created_at', 'updated_at'
+            'background_color', 'background_image',
+            'show_in_landing_page', 'landing_page_order',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class LandingPageSectionSerializer(serializers.ModelSerializer):
+    """Serializer for landing page sections with page info"""
+    page_title = serializers.CharField(source='page.title', read_only=True, allow_null=True)
+    page_slug = serializers.CharField(source='page.slug', read_only=True, allow_null=True)
+
+    class Meta:
+        model = Section
+        fields = [
+            'id', 'title', 'slug', 'section_type', 'content',
+            'background_color', 'background_image',
+            'landing_page_order', 'page', 'page_title', 'page_slug'
+        ]
+        read_only_fields = ['id']
 
 
 class PageSerializer(serializers.ModelSerializer):
     """Serializer for Page model"""
     sections = SectionSerializer(many=True, read_only=True)
+    # Override slug to allow slashes for nested page paths
+    slug = serializers.CharField(max_length=255)
 
     class Meta:
         model = Page
@@ -86,16 +105,39 @@ class GallerySerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
     """Serializer for Document model"""
     file_size_mb = serializers.SerializerMethodField()
+    page_slug = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_null=True,
+        allow_blank=True
+    )
 
     class Meta:
         model = Document
         fields = [
-            'id', 'organization', 'school', 'title', 'description', 'file',
+            'id', 'page', 'page_slug', 'title', 'description', 'file',
             'file_size', 'file_size_mb', 'file_type', 'category', 'uploaded_by',
             'is_public', 'download_count', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'download_count', 'file_size']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'download_count']
 
     def get_file_size_mb(self, obj):
         """Get file size in MB"""
         return round(obj.file_size / (1024 * 1024), 2)
+
+    def to_representation(self, instance):
+        """Include page_slug in read responses"""
+        data = super().to_representation(instance)
+        data['page_slug'] = instance.page.slug if instance.page else None
+        return data
+
+    def validate(self, attrs):
+        """Convert page_slug to page object"""
+        page_slug = attrs.pop('page_slug', None)
+        if page_slug:
+            try:
+                page = Page.objects.get(slug=page_slug)
+                attrs['page'] = page
+            except Page.DoesNotExist:
+                raise serializers.ValidationError({'page_slug': f'Page with slug "{page_slug}" not found'})
+        return attrs
