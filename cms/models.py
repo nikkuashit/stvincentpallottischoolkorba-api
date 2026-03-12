@@ -1,6 +1,7 @@
 """
 CMS App - Content Management System
 
+Simplified without multi-tenancy.
 This module handles:
 - Navigation menus (hierarchical)
 - Static pages
@@ -16,16 +17,6 @@ from django.db import models
 class NavigationMenu(models.Model):
     """Hierarchical navigation menu"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='navigation_menus'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='navigation_menus'
-    )
     parent = models.ForeignKey(
         'self',
         on_delete=models.CASCADE,
@@ -35,7 +26,7 @@ class NavigationMenu(models.Model):
     )
 
     title = models.CharField(max_length=100)
-    slug = models.SlugField()
+    slug = models.SlugField(unique=True)
     href = models.CharField(max_length=255, blank=True)
     icon = models.CharField(max_length=50, blank=True)
     description = models.TextField(blank=True)
@@ -72,32 +63,21 @@ class NavigationMenu(models.Model):
 
     class Meta:
         ordering = ['display_order', 'title']
-        unique_together = [['organization', 'school', 'slug', 'parent']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
             models.Index(fields=['parent', 'display_order']),
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.school.name}"
+        return self.title
 
 
 class Page(models.Model):
     """Static pages"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='pages'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='pages'
-    )
 
     title = models.CharField(max_length=255)
-    slug = models.CharField(max_length=255, db_index=True)  # CharField to allow slashes in paths
+    slug = models.CharField(max_length=255, unique=True, db_index=True)
     description = models.TextField(blank=True)
     hero_image = models.ImageField(upload_to='pages/heroes/', null=True, blank=True)
 
@@ -115,29 +95,17 @@ class Page(models.Model):
 
     class Meta:
         ordering = ['title']
-        unique_together = [['organization', 'school', 'slug']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_published']),
-            models.Index(fields=['slug']),
+            models.Index(fields=['is_published']),
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.school.name}"
+        return self.title
 
 
 class Section(models.Model):
     """Dynamic content sections"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='sections'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='sections'
-    )
     page = models.ForeignKey(
         Page,
         on_delete=models.CASCADE,
@@ -177,39 +145,42 @@ class Section(models.Model):
     # Landing page settings
     show_in_landing_page = models.BooleanField(default=False)
     landing_page_order = models.IntegerField(default=0, help_text="Order of section on landing page")
+    landing_page_width = models.CharField(
+        max_length=20,
+        choices=[
+            ('full', 'Full Width'),
+            ('three-quarters', 'Three Quarters (3/4)'),
+            ('two-thirds', 'Two Thirds (2/3)'),
+            ('half', 'Half (1/2)'),
+            ('third', 'One Third (1/3)'),
+            ('quarter', 'Quarter (1/4)'),
+        ],
+        default='full',
+        help_text="Width of section on landing page. Partial-width sections appear side by side."
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['display_order', 'title']
-        unique_together = [['organization', 'school', 'page', 'slug']]
+        unique_together = [['page', 'slug']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_visible']),
+            models.Index(fields=['is_visible']),
             models.Index(fields=['page', 'display_order']),
-            models.Index(fields=['organization', 'school', 'show_in_landing_page', 'landing_page_order']),
+            models.Index(fields=['show_in_landing_page', 'landing_page_order']),
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.school.name}"
+        return self.title
 
 
 class Gallery(models.Model):
     """Photo galleries"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='galleries'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='galleries'
-    )
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField()
+    slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
 
     cover_image = models.ImageField(upload_to='galleries/covers/', null=True, blank=True)
@@ -238,9 +209,8 @@ class Gallery(models.Model):
     class Meta:
         verbose_name_plural = "Galleries"
         ordering = ['-published_date']
-        unique_together = [['organization', 'school', 'slug']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_published']),
+            models.Index(fields=['is_published']),
         ]
 
     def __str__(self):
@@ -250,11 +220,6 @@ class Gallery(models.Model):
 class GalleryImage(models.Model):
     """Images in galleries"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='gallery_images'
-    )
     gallery = models.ForeignKey(
         Gallery,
         on_delete=models.CASCADE,
@@ -280,7 +245,7 @@ class GalleryImage(models.Model):
     class Meta:
         ordering = ['display_order', 'created_at']
         indexes = [
-            models.Index(fields=['organization', 'gallery', 'display_order']),
+            models.Index(fields=['gallery', 'display_order']),
         ]
 
     def __str__(self):
@@ -346,16 +311,6 @@ class Document(models.Model):
 class Slider(models.Model):
     """Hero slider/carousel for landing page"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='sliders'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='sliders'
-    )
 
     title = models.CharField(max_length=255)
     subtitle = models.CharField(max_length=500, blank=True)
@@ -376,27 +331,17 @@ class Slider(models.Model):
     class Meta:
         ordering = ['display_order', 'created_at']
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
             models.Index(fields=['display_order']),
         ]
 
     def __str__(self):
-        return f"{self.title} - {self.school.name}"
+        return self.title
 
 
 class Marquee(models.Model):
     """Scrolling announcement/marquee text"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='marquees'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='marquees'
-    )
 
     text = models.TextField()
     link = models.CharField(max_length=255, blank=True)
@@ -415,9 +360,9 @@ class Marquee(models.Model):
     class Meta:
         ordering = ['display_order', '-created_at']
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
             models.Index(fields=['start_date', 'end_date']),
         ]
 
     def __str__(self):
-        return f"{self.text[:50]}... - {self.school.name}"
+        return f"{self.text[:50]}..."

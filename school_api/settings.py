@@ -229,6 +229,35 @@ REST_AUTH = {
 
 
 # ==============================================================================
+# EMAIL CONFIGURATION
+# ==============================================================================
+
+# Development: Print emails to console (no actual sending)
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Production: Configure SMTP (uncomment and set values)
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+# EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+# DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
+
+
+# ==============================================================================
+# ALLAUTH CONFIGURATION
+# ==============================================================================
+
+# Disable email verification for development (users can login immediately)
+ACCOUNT_EMAIL_VERIFICATION = 'none'  # Options: 'mandatory', 'optional', 'none'
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_USERNAME_REQUIRED = True
+ACCOUNT_AUTHENTICATION_METHOD = 'username_email'  # Allow login with username or email
+
+
+# ==============================================================================
 # CORS CONFIGURATION
 # ==============================================================================
 

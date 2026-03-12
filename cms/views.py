@@ -1,4 +1,4 @@
-"""ViewSets for CMS App"""
+"""ViewSets for CMS App - Simplified without multi-tenancy"""
 
 from django.db import models
 from rest_framework import viewsets, filters, status
@@ -31,11 +31,6 @@ class NavigationMenuViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter menus based on query parameters"""
         queryset = super().get_queryset()
-
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
 
         # Filter by parent
         parent_id = self.request.query_params.get('parent', None)
@@ -90,11 +85,6 @@ class PageViewSet(viewsets.ModelViewSet):
         """Show only published pages for non-staff users"""
         queryset = super().get_queryset()
 
-        # Manual filtering
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
         slug = self.request.query_params.get('slug', None)
         if slug:
             queryset = queryset.filter(slug=slug)
@@ -123,16 +113,47 @@ class SectionViewSet(viewsets.ModelViewSet):
     ordering_fields = ['display_order', 'title', 'created_at']
     ordering = ['display_order', 'title']
 
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to use update_or_create based on unique constraint fields.
+        This prevents IntegrityError when a section with the same page/slug exists.
+        """
+        import re
+
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+
+        # Sanitize slug
+        if 'slug' in data and data['slug']:
+            sanitized_slug = re.sub(r'[^a-zA-Z0-9_-]', '-', data['slug'])
+            sanitized_slug = re.sub(r'-+', '-', sanitized_slug).strip('-')
+            data['slug'] = sanitized_slug
+
+        # Check for existing section with same unique constraint
+        page_id = data.get('page')
+        slug = data.get('slug')
+
+        if slug:
+            existing = Section.objects.filter(
+                page_id=page_id,
+                slug=slug
+            ).first()
+
+            if existing:
+                # Update existing section instead of creating
+                serializer = self.get_serializer(existing, data=data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # No existing section, proceed with normal create
+        return super().create(request, *args, **kwargs)
+
     def get_queryset(self):
         """Show only visible sections for non-staff users"""
         queryset = super().get_queryset()
 
-        # Manual filtering
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
-        page_id = self.request.query_params.get('page', None)
+        # Use 'page_id' instead of 'page' to avoid conflict with DRF pagination
+        page_id = self.request.query_params.get('page_id', None)
         if page_id:
             queryset = queryset.filter(page_id=page_id)
 
@@ -168,11 +189,6 @@ class GalleryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Show only published galleries for non-staff users"""
         queryset = super().get_queryset()
-
-        # Manual filtering
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
 
         event_id = self.request.query_params.get('event', None)
         if event_id:
@@ -230,7 +246,6 @@ class DocumentViewSet(viewsets.ModelViewSet):
         """Show only public documents for non-staff users"""
         queryset = super().get_queryset()
 
-        # Manual filtering
         category = self.request.query_params.get('category', None)
         if category:
             queryset = queryset.filter(category=category)
@@ -272,11 +287,6 @@ class SliderViewSet(viewsets.ModelViewSet):
         """Filter sliders based on query parameters"""
         queryset = super().get_queryset()
 
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
         # Filter by is_active
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
@@ -309,11 +319,6 @@ class MarqueeViewSet(viewsets.ModelViewSet):
 
         queryset = super().get_queryset()
 
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
         # Filter by is_active
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
@@ -338,50 +343,18 @@ class LandingPageView(APIView):
     Returns sections ordered by landing_page_order.
 
     GET /api/cms/landing-page/
-    Optional: ?school_slug=<slug> or ?school=<id> for multi-school scenarios
     """
     permission_classes = [AllowAny]
 
     def get(self, request):
-        from tenants.models import School
-
-        # Get school by slug or ID, or default to first school
-        school_slug = request.query_params.get('school_slug')
-        school_id = request.query_params.get('school')
-
-        try:
-            if school_slug:
-                school = School.objects.get(slug=school_slug)
-            elif school_id:
-                school = School.objects.get(id=school_id)
-            else:
-                # Default to first school (single-school scenario)
-                school = School.objects.first()
-                if not school:
-                    return Response(
-                        {'error': 'No school configured'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-        except School.DoesNotExist:
-            return Response(
-                {'error': 'School not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
         # Get all sections marked for landing page, ordered by landing_page_order
         sections = Section.objects.filter(
-            school=school,
             show_in_landing_page=True,
             is_visible=True
         ).select_related('page').order_by('landing_page_order', 'display_order')
 
-        serializer = LandingPageSectionSerializer(sections, many=True)
+        serializer = LandingPageSectionSerializer(sections, many=True, context={'request': request})
 
         return Response({
-            'school': {
-                'id': str(school.id),
-                'name': school.name,
-                'slug': school.slug
-            },
             'sections': serializer.data
         })

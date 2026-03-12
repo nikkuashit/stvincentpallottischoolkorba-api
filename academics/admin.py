@@ -1,4 +1,4 @@
-"""Django Admin for Academics App"""
+"""Django Admin for Academics App - Simplified without multi-tenancy"""
 
 from django.contrib import admin
 from .models import AcademicYear, Class, Student, Parent, StudentParent, Subject, Course
@@ -6,8 +6,8 @@ from .models import AcademicYear, Class, Student, Parent, StudentParent, Subject
 
 @admin.register(AcademicYear)
 class AcademicYearAdmin(admin.ModelAdmin):
-    list_display = ['name', 'school', 'start_date', 'end_date', 'is_current', 'is_active']
-    list_filter = ['is_current', 'is_active', 'school', 'organization']
+    list_display = ['name', 'start_date', 'end_date', 'is_current', 'is_active']
+    list_filter = ['is_current', 'is_active']
     search_fields = ['name']
     readonly_fields = ['created_at', 'updated_at']
     date_hierarchy = 'start_date'
@@ -15,11 +15,11 @@ class AcademicYearAdmin(admin.ModelAdmin):
 
 @admin.register(Class)
 class ClassAdmin(admin.ModelAdmin):
-    list_display = ['name', 'school', 'grade', 'section', 'class_teacher', 'room_number', 'capacity', 'is_active']
-    list_filter = ['grade', 'is_active', 'school', 'organization']
+    list_display = ['name', 'grade', 'section', 'class_teacher', 'room_number', 'capacity', 'is_active']
+    list_filter = ['grade', 'is_active']
     search_fields = ['name', 'section', 'room_number']
     readonly_fields = ['created_at', 'updated_at']
-    ordering = ['school', 'grade', 'section']
+    ordering = ['grade', 'section']
 
 
 class StudentParentInline(admin.TabularInline):
@@ -30,8 +30,8 @@ class StudentParentInline(admin.TabularInline):
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'admission_number', 'school', 'current_class', 'status', 'admission_date']
-    list_filter = ['status', 'gender', 'school', 'current_class', 'organization']
+    list_display = ['full_name', 'admission_number', 'current_class', 'status', 'admission_date']
+    list_filter = ['status', 'gender', 'current_class']
     search_fields = ['first_name', 'last_name', 'admission_number', 'email']
     readonly_fields = ['created_at', 'updated_at']
     date_hierarchy = 'admission_date'
@@ -44,8 +44,8 @@ class StudentAdmin(admin.ModelAdmin):
 
 @admin.register(Parent)
 class ParentAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'relation', 'school', 'email', 'phone', 'is_primary_contact', 'is_active']
-    list_filter = ['relation', 'is_primary_contact', 'is_active', 'school', 'organization']
+    list_display = ['full_name', 'relation', 'email', 'phone', 'is_primary_contact', 'is_active']
+    list_filter = ['relation', 'is_primary_contact', 'is_active']
     search_fields = ['first_name', 'last_name', 'email', 'phone']
     readonly_fields = ['created_at', 'updated_at']
 
@@ -56,23 +56,23 @@ class ParentAdmin(admin.ModelAdmin):
 
 @admin.register(StudentParent)
 class StudentParentAdmin(admin.ModelAdmin):
-    list_display = ['student', 'parent', 'is_primary', 'organization', 'created_at']
-    list_filter = ['is_primary', 'organization']
+    list_display = ['student', 'parent', 'is_primary', 'created_at']
+    list_filter = ['is_primary']
     search_fields = ['student__first_name', 'student__last_name', 'parent__first_name', 'parent__last_name']
     readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ['name', 'code', 'school', 'is_active', 'created_at']
-    list_filter = ['is_active', 'school', 'organization']
+    list_display = ['name', 'code', 'is_active', 'created_at']
+    list_filter = ['is_active']
     search_fields = ['name', 'code', 'description']
     readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ['subject', 'class_assigned', 'teacher', 'academic_year', 'school', 'is_active']
-    list_filter = ['is_active', 'academic_year', 'school', 'organization']
+    list_display = ['subject', 'class_assigned', 'teacher', 'academic_year', 'is_active']
+    list_filter = ['is_active', 'academic_year']
     search_fields = ['subject__name', 'class_assigned__name', 'teacher__user__first_name']
     readonly_fields = ['created_at', 'updated_at']

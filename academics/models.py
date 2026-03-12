@@ -1,6 +1,7 @@
 """
 Academics App - Academic Management
 
+Simplified without multi-tenancy.
 This module handles:
 - Academic years
 - Classes and grades
@@ -15,18 +16,8 @@ from django.db import models
 class AcademicYear(models.Model):
     """Academic year configuration"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='academic_years'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='academic_years'
-    )
 
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     start_date = models.DateField()
     end_date = models.DateField()
     is_current = models.BooleanField(default=False)
@@ -37,28 +28,17 @@ class AcademicYear(models.Model):
 
     class Meta:
         ordering = ['-start_date']
-        unique_together = [['organization', 'school', 'name']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_current']),
+            models.Index(fields=['is_current']),
         ]
 
     def __str__(self):
-        return f"{self.name} - {self.school.name}"
+        return self.name
 
 
 class Class(models.Model):
     """Class/Grade configuration"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='classes'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='classes'
-    )
 
     name = models.CharField(max_length=100)
     grade = models.IntegerField()
@@ -82,28 +62,18 @@ class Class(models.Model):
     class Meta:
         verbose_name_plural = "Classes"
         ordering = ['grade', 'section']
-        unique_together = [['organization', 'school', 'grade', 'section']]
+        unique_together = [['grade', 'section']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
         ]
 
     def __str__(self):
-        return f"{self.name} - {self.school.name}"
+        return self.name
 
 
 class Student(models.Model):
     """Student information"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='students'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='students'
-    )
     current_class = models.ForeignKey(
         Class,
         on_delete=models.SET_NULL,
@@ -111,9 +81,16 @@ class Student(models.Model):
         blank=True,
         related_name='students'
     )
+    user_profile = models.OneToOneField(
+        'accounts.UserProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='student_record'
+    )
 
     # Basic Information
-    admission_number = models.CharField(max_length=50)
+    admission_number = models.CharField(max_length=50, unique=True)
     roll_number = models.CharField(max_length=50, blank=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -163,9 +140,8 @@ class Student(models.Model):
 
     class Meta:
         ordering = ['first_name', 'last_name']
-        unique_together = [['organization', 'school', 'admission_number']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'status']),
+            models.Index(fields=['status']),
             models.Index(fields=['admission_number']),
         ]
 
@@ -176,20 +152,17 @@ class Student(models.Model):
 class Parent(models.Model):
     """Parent/Guardian information"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='parents'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='parents'
-    )
     students = models.ManyToManyField(
         Student,
-        related_name='parents',
+        related_name='parents_list',
         through='StudentParent'
+    )
+    user_profile = models.OneToOneField(
+        'accounts.UserProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='parent_record'
     )
 
     # Basic Information
@@ -234,7 +207,7 @@ class Parent(models.Model):
     class Meta:
         ordering = ['first_name', 'last_name']
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
             models.Index(fields=['email']),
         ]
 
@@ -245,11 +218,6 @@ class Parent(models.Model):
 class StudentParent(models.Model):
     """Junction table for Student-Parent relationship"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='student_parents'
-    )
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     parent = models.ForeignKey(Parent, on_delete=models.CASCADE)
     is_primary = models.BooleanField(default=False)
@@ -258,10 +226,10 @@ class StudentParent(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = [['organization', 'student', 'parent']]
+        unique_together = [['student', 'parent']]
         indexes = [
-            models.Index(fields=['organization', 'student']),
-            models.Index(fields=['organization', 'parent']),
+            models.Index(fields=['student']),
+            models.Index(fields=['parent']),
         ]
 
     def __str__(self):
@@ -271,19 +239,9 @@ class StudentParent(models.Model):
 class Subject(models.Model):
     """Subject/Course subjects"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='subjects'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='subjects'
-    )
 
     name = models.CharField(max_length=100)
-    code = models.CharField(max_length=20)
+    code = models.CharField(max_length=20, unique=True)
     description = models.TextField(blank=True)
 
     is_active = models.BooleanField(default=True)
@@ -293,9 +251,8 @@ class Subject(models.Model):
 
     class Meta:
         ordering = ['name']
-        unique_together = [['organization', 'school', 'code']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
         ]
 
     def __str__(self):
@@ -305,16 +262,6 @@ class Subject(models.Model):
 class Course(models.Model):
     """Course assignment to classes"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='courses'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='courses'
-    )
     class_assigned = models.ForeignKey(
         Class,
         on_delete=models.CASCADE,
@@ -345,9 +292,9 @@ class Course(models.Model):
 
     class Meta:
         ordering = ['class_assigned', 'subject']
-        unique_together = [['organization', 'school', 'class_assigned', 'subject', 'academic_year']]
+        unique_together = [['class_assigned', 'subject', 'academic_year']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_active']),
+            models.Index(fields=['is_active']),
         ]
 
     def __str__(self):

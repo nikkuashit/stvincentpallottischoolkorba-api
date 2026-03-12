@@ -1,18 +1,18 @@
-"""Django Admin for CMS App"""
+"""Django Admin for CMS App - Simplified without multi-tenancy"""
 
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document
+from .models import NavigationMenu, Page, Section, Gallery, GalleryImage, Document, Slider, Marquee
 
 
 @admin.register(NavigationMenu)
 class NavigationMenuAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'menu_type', 'parent', 'display_order', 'show_in_navigation', 'is_active']
-    list_filter = ['menu_type', 'is_external', 'show_in_navigation', 'show_in_footer', 'is_active', 'school']
+    list_display = ['title', 'menu_type', 'parent', 'display_order', 'show_in_navigation', 'is_active']
+    list_filter = ['menu_type', 'is_external', 'show_in_navigation', 'show_in_footer', 'is_active']
     search_fields = ['title', 'slug', 'href']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
-    ordering = ['school', 'display_order', 'title']
+    ordering = ['display_order', 'title']
 
 
 class SectionInline(admin.TabularInline):
@@ -24,8 +24,8 @@ class SectionInline(admin.TabularInline):
 
 @admin.register(Page)
 class PageAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'slug', 'is_published', 'published_at', 'created_at']
-    list_filter = ['is_published', 'school', 'organization']
+    list_display = ['title', 'slug', 'is_published', 'published_at', 'created_at']
+    list_filter = ['is_published']
     search_fields = ['title', 'slug', 'description', 'meta_title']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
@@ -35,15 +35,15 @@ class PageAdmin(admin.ModelAdmin):
 
 @admin.register(Section)
 class SectionAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'page', 'section_type', 'display_order', 'is_visible', 'show_in_landing_page', 'landing_page_order', 'created_at']
-    list_filter = ['section_type', 'is_visible', 'show_in_landing_page', 'school', 'page']
+    list_display = ['title', 'page', 'section_type', 'display_order', 'is_visible', 'show_in_landing_page', 'landing_page_order', 'created_at']
+    list_filter = ['section_type', 'is_visible', 'show_in_landing_page', 'page']
     search_fields = ['title', 'slug']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
     ordering = ['page', 'display_order']
     fieldsets = (
         (None, {
-            'fields': ('organization', 'school', 'page', 'title', 'slug', 'section_type')
+            'fields': ('page', 'title', 'slug', 'section_type')
         }),
         ('Content', {
             'fields': ('content',)
@@ -52,7 +52,7 @@ class SectionAdmin(admin.ModelAdmin):
             'fields': ('display_order', 'is_visible', 'background_color', 'background_image')
         }),
         ('Landing Page', {
-            'fields': ('show_in_landing_page', 'landing_page_order'),
+            'fields': ('show_in_landing_page', 'landing_page_order', 'landing_page_width'),
             'description': 'Configure how this section appears on the landing page'
         }),
         ('Timestamps', {
@@ -70,8 +70,8 @@ class GalleryImageInline(admin.TabularInline):
 
 @admin.register(Gallery)
 class GalleryAdmin(admin.ModelAdmin):
-    list_display = ['title', 'school', 'event', 'is_published', 'published_date', 'created_by']
-    list_filter = ['is_published', 'school', 'organization']
+    list_display = ['title', 'event', 'is_published', 'published_date', 'created_by']
+    list_filter = ['is_published']
     search_fields = ['title', 'slug', 'description']
     prepopulated_fields = {'slug': ('title',)}
     readonly_fields = ['created_at', 'updated_at']
@@ -82,7 +82,7 @@ class GalleryAdmin(admin.ModelAdmin):
 @admin.register(GalleryImage)
 class GalleryImageAdmin(admin.ModelAdmin):
     list_display = ['image_preview', 'title', 'gallery', 'display_order', 'uploaded_by', 'created_at']
-    list_filter = ['gallery', 'organization']
+    list_filter = ['gallery']
     search_fields = ['title', 'description', 'gallery__title']
     readonly_fields = ['created_at', 'updated_at']
 
@@ -103,3 +103,25 @@ class DocumentAdmin(admin.ModelAdmin):
     def file_size_mb(self, obj):
         return f"{obj.file_size / (1024 * 1024):.2f} MB"
     file_size_mb.short_description = 'Size'
+
+
+@admin.register(Slider)
+class SliderAdmin(admin.ModelAdmin):
+    list_display = ['title', 'display_order', 'is_active', 'created_at']
+    list_filter = ['is_active']
+    search_fields = ['title', 'subtitle', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order']
+
+
+@admin.register(Marquee)
+class MarqueeAdmin(admin.ModelAdmin):
+    list_display = ['text_preview', 'display_order', 'is_active', 'start_date', 'end_date']
+    list_filter = ['is_active']
+    search_fields = ['text']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order']
+
+    def text_preview(self, obj):
+        return f"{obj.text[:50]}..." if len(obj.text) > 50 else obj.text
+    text_preview.short_description = 'Text'

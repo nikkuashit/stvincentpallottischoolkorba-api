@@ -1,6 +1,7 @@
 """
 Config App - School Configuration & Branding
 
+Simplified without multi-tenancy.
 This module handles:
 - Theme configuration and colors
 - Social media links
@@ -11,18 +12,8 @@ from django.db import models
 
 
 class ThemeConfig(models.Model):
-    """Theme and branding configuration"""
+    """Theme and branding configuration (singleton)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='theme_configs'
-    )
-    school = models.OneToOneField(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='theme_config'
-    )
 
     # Colors
     primary_color = models.CharField(max_length=7, default='#1e3a8a')
@@ -57,27 +48,16 @@ class ThemeConfig(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        indexes = [
-            models.Index(fields=['organization', 'school']),
-        ]
+        verbose_name = "Theme Configuration"
+        verbose_name_plural = "Theme Configuration"
 
     def __str__(self):
-        return f"Theme - {self.school.name}"
+        return "Theme Configuration"
 
 
 class SocialLinks(models.Model):
-    """Social media links"""
+    """Social media links (singleton)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='social_links'
-    )
-    school = models.OneToOneField(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='social_links'
-    )
 
     facebook = models.URLField(blank=True)
     twitter = models.URLField(blank=True)
@@ -93,10 +73,8 @@ class SocialLinks(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        verbose_name = "Social Links"
         verbose_name_plural = "Social Links"
-        indexes = [
-            models.Index(fields=['organization', 'school']),
-        ]
 
     def __str__(self):
-        return f"Social Links - {self.school.name}"
+        return "Social Links"

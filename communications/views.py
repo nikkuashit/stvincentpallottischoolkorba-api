@@ -1,4 +1,4 @@
-"""ViewSets for Communications App"""
+"""ViewSets for Communications App - Simplified without multi-tenancy"""
 
 from django.db import models
 from rest_framework import viewsets, filters
@@ -25,11 +25,6 @@ class NewsViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Filter news based on query parameters"""
         queryset = super().get_queryset()
-
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
 
         # Filter by is_published
         is_published = self.request.query_params.get('is_published', None)
@@ -74,11 +69,6 @@ class EventViewSet(viewsets.ModelViewSet):
         """Filter events based on query parameters"""
         queryset = super().get_queryset()
 
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-
         # Filter by event_type
         event_type = self.request.query_params.get('event_type', None)
         if event_type:
@@ -120,11 +110,6 @@ class AnnouncementViewSet(viewsets.ModelViewSet):
         from django.utils import timezone
 
         queryset = super().get_queryset()
-
-        # Filter by school
-        school_id = self.request.query_params.get('school', None)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
 
         # Filter by priority
         priority = self.request.query_params.get('priority', None)

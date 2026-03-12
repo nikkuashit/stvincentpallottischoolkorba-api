@@ -1,6 +1,7 @@
 """
 Communications App - News, Events, Announcements
 
+Simplified without multi-tenancy.
 This module handles:
 - News articles
 - School events
@@ -15,19 +16,9 @@ from django.db import models
 class News(models.Model):
     """News articles"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='news'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='news'
-    )
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField()
+    slug = models.SlugField(unique=True)
     summary = models.TextField()
     content = models.TextField()
 
@@ -56,9 +47,8 @@ class News(models.Model):
     class Meta:
         verbose_name_plural = "News"
         ordering = ['-published_date']
-        unique_together = [['organization', 'school', 'slug']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_published']),
+            models.Index(fields=['is_published']),
             models.Index(fields=['published_date']),
         ]
 
@@ -69,19 +59,9 @@ class News(models.Model):
 class Event(models.Model):
     """School events"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='events'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='events'
-    )
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField()
+    slug = models.SlugField(unique=True)
     description = models.TextField()
 
     event_type = models.CharField(
@@ -120,9 +100,8 @@ class Event(models.Model):
 
     class Meta:
         ordering = ['-start_date']
-        unique_together = [['organization', 'school', 'slug']]
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_published']),
+            models.Index(fields=['is_published']),
             models.Index(fields=['start_date']),
         ]
 
@@ -133,16 +112,6 @@ class Event(models.Model):
 class Announcement(models.Model):
     """School announcements"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='announcements'
-    )
-    school = models.ForeignKey(
-        'tenants.School',
-        on_delete=models.CASCADE,
-        related_name='announcements'
-    )
 
     title = models.CharField(max_length=255)
     content = models.TextField()
@@ -177,7 +146,7 @@ class Announcement(models.Model):
     class Meta:
         ordering = ['-published_date']
         indexes = [
-            models.Index(fields=['organization', 'school', 'is_published']),
+            models.Index(fields=['is_published']),
             models.Index(fields=['published_date', 'expiry_date']),
         ]
 
@@ -188,11 +157,6 @@ class Announcement(models.Model):
 class Notification(models.Model):
     """User notifications"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    organization = models.ForeignKey(
-        'tenants.Organization',
-        on_delete=models.CASCADE,
-        related_name='notifications'
-    )
     user = models.ForeignKey(
         'accounts.UserProfile',
         on_delete=models.CASCADE,
@@ -224,7 +188,7 @@ class Notification(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['organization', 'user', 'is_read']),
+            models.Index(fields=['user', 'is_read']),
             models.Index(fields=['created_at']),
         ]
 

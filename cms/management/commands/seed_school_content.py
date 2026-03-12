@@ -7,13 +7,12 @@ This command creates:
 - Sections for each page with JSON content
 
 Usage:
-    python manage.py seed_school_content [--school-slug SLUG] [--overwrite]
+    python manage.py seed_school_content [--overwrite]
 """
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.utils.text import slugify
-from tenants.models import School, Organization
 from cms.models import NavigationMenu, Page, Section
 
 
@@ -223,9 +222,9 @@ SCHOOL_CONTENT = {
             }
         }
     },
-    "activity": {
-        "title": "Activity",
-        "slug": "activity",
+    "activities": {
+        "title": "Activities",
+        "slug": "activities",
         "description": "Cultural activities, sports, events and celebrations",
         "sections": {
             "cultural": {
@@ -256,19 +255,6 @@ SCHOOL_CONTENT = {
                     "text": "We encourage our students to participate in all indoor and outdoor games. We have Carrom Boards, Chess, Chinese Checkers and Table Tennis. We have separate rooms for Indoor games. We also have spacious ground for sports like Kabaddi, Kho-Kho. We have facility for many outdoor games like Football, Volleyball, Basketball and Cricket. All opportunities and guidance is provided to make our students healthy and sports person."
                 }
             },
-            "recent_activities": {
-                "type": "news",
-                "title": "Recent Activities",
-                "content": {
-                    "items": [
-                        {"date": "2021-07-03", "title": "Environmental Day Celebration 2021", "description": "Earth is our home and we must work hard to keep it protected and green."},
-                        {"date": "2021-04-30", "title": "School Reopens On 14/06/2021", "description": "School Reopens On 14/06/2021."},
-                        {"date": "2021-03-27", "title": "New Session Commences On 01/04/2021", "description": "New Session Commences On 01/04/2021."},
-                        {"date": "2021-03-15", "title": "Annual Result Will Be Declared On 27/03/2021", "description": "Annual Result Will Be Declared On 27/03/2021."},
-                        {"date": "2020-12-15", "title": "Admissions Open For Nursery To Class XI from 15/01/2021", "description": "Admissions Open For Nursery To Class XI from 15/01/2021."}
-                    ]
-                }
-            },
             "celebration": {
                 "type": "custom",
                 "title": "Celebration",
@@ -279,111 +265,19 @@ SCHOOL_CONTENT = {
         },
         "children": ["cultural-activity", "co-scholastic", "olympiads", "sports-games", "celebration"]
     },
-    "downloads": {
-        "title": "Downloads",
-        "slug": "downloads",
-        "description": "Download transfer certificates and forms",
+    "facilities": {
+        "title": "Facilities",
+        "slug": "facilities",
+        "description": "School facilities and amenities",
         "sections": {
-            "tc_download": {
+            "overview": {
                 "type": "custom",
-                "title": "TC Download",
+                "title": "Our Facilities",
                 "content": {
-                    "students": [
-                        {"sn": 1, "name": "Ravindra Singh Thakur", "class": "IX"},
-                        {"sn": 2, "name": "Nistha Patel", "class": "IX"},
-                        {"sn": 3, "name": "Astha Patel", "class": "IX"},
-                        {"sn": 4, "name": "Angel Mohanty", "class": "XI"},
-                        {"sn": 5, "name": "Akshat Shrivastava", "class": "IX"}
-                    ]
-                }
-            },
-            "tc_form": {
-                "type": "custom",
-                "title": "TC Apply Form",
-                "content": {
-                    "fields": ["Name", "Roll Number", "Class", "Section", "Last Passed Out Year", "Email", "Message"]
+                    "text": "St. Vincent Pallotti School provides world-class facilities to ensure a comprehensive learning environment for students."
                 }
             }
         }
-    },
-    "academics": {
-        "title": "Academics",
-        "slug": "academics",
-        "description": "Academic information, syllabus, and affiliation details",
-        "sections": {
-            "affiliation": {
-                "type": "custom",
-                "title": "Affiliation",
-                "content": {
-                    "documents": [
-                        {"sn": "01", "name": "AFFILIATION LETTER"},
-                        {"sn": "02", "name": "SOCIETY REGISTRATION CERTIFICATE"},
-                        {"sn": "03", "name": "NO. OBJECTION CERTIFICATE"},
-                        {"sn": "04", "name": "RECOGNITION CERTIFICATE RTE"},
-                        {"sn": "05", "name": "BUILDING SAFETY CERTIFICATE"},
-                        {"sn": "06", "name": "FIRE SAFETY CERTIFICATE"},
-                        {"sn": "07", "name": "SELF CERTIFICATION BY SCHOOL"},
-                        {"sn": "08", "name": "WATER, HEALTH AND SANITATION"},
-                        {"sn": "09", "name": "FEE STRUCTURE OF THE SCHOOL"},
-                        {"sn": "10", "name": "ANNUAL ACADEMIC CALENDAR"},
-                        {"sn": "11", "name": "SCHOOL MANAGEMENT COMMITTEE (SMC)"},
-                        {"sn": "12", "name": "PARENTS TEACHERS ASSOCIATION (PTA)"},
-                        {"sn": "13", "name": "LAST THREE YEAR RESULT"},
-                        {"sn": "14", "name": "STAFF & INFRASTRUCTURE DETAILS"}
-                    ]
-                }
-            },
-            "syllabus": {
-                "type": "custom",
-                "title": "Syllabus",
-                "content": {
-                    "paragraphs": [
-                        "A special effort, made by the school to facilitate the total development of the child. Accordingly, a syllabus is designed, which combined intellectual data along with a great deal of personal activity. A qualified and expert panel staff members is appointed to periodically evaluate the syllabus and to suggest the necessary progress required in it.",
-                        "We impart Education to our students through the upgraded syllabus of Central Board of secondary Education [C.B.S.E.] which adopts the Modern Methodology for comprehensive and integrated education of the students. Students are under continuous observation and are provided ample practical assignments. This inculcates in them more interests and pursuit of practical knowledge."
-                    ]
-                }
-            },
-            "subjects": {
-                "type": "custom",
-                "title": "Subjects Offered",
-                "content": {
-                    "classes": [
-                        {"class": "Nursery", "subjects": "English, Hindi, Maths, EVS, Drawing"},
-                        {"class": "PP-I & PP-II", "subjects": "English, Hindi, Maths, EVS, Drawing, Art & Craft"},
-                        {"class": "CLASS I & V", "subjects": "English, Hindi, Maths, EVS, Computer, G.K., Moral Science, Art & Craft"},
-                        {"class": "CLASS VI & VIII", "subjects": "English, Hindi, Sanskrit, Maths, Science, Social Science, Computer, G.K., Moral Science, Drawing, Art & Craft"},
-                        {"class": "CLASS IX & X", "subjects": "English, Hindi, Maths, Science, Social Science, Information Technology, Moral Science"},
-                        {"class": "CLASS XI & XII", "subjects": "English, Maths, Bio., Physics, Chem., Computer Science, Physical Edu., Commerce Stream"}
-                    ]
-                }
-            },
-            "ptm": {
-                "type": "custom",
-                "title": "PTM",
-                "content": {
-                    "description": "There will be PTM after every examination. The purpose of the PTM is to provide the parents an opportunity to catch up with the performance and the progress of their wards also if any child is found to be performing in a manner that is not satisfactory. Parents will be advised to pay more attention to the efforts put in by their wards. Constructive suggestion will be appreciated. Parents are allowed to meet the respective teachers on Saturdays between 12:00 am to 12:30 pm. Parents are not allowed to interact with any teacher during the teaching hours in class. This will help them to guide and help their wards in a better way.",
-                    "schedule": [
-                        {"ptm": "PTM – II will be held on", "date": "24/10/2019", "time": "11:30 AM"},
-                        {"ptm": "PTM After Quarterly Exam", "date": "12/01/2019", "time": "11:30 AM"}
-                    ]
-                }
-            },
-            "scholarship": {
-                "type": "custom",
-                "title": "Scholarship",
-                "content": {
-                    "categories": [
-                        {"class": "Pre-Primary [Nursery to PP-II]", "prize": "Rs. 1000/-", "count": 3},
-                        {"class": "Primary Classes [I-V]", "prize": "Rs. 1000/-", "count": 3},
-                        {"class": "Middle Classes [VI-VIII]", "prize": "Rs. 1500/-", "count": 3},
-                        {"class": "Secondary Classes [IX-X]", "prize": "Rs. 1500/-", "count": 3},
-                        {"class": "Senior Secondary Classes [XI-XII]", "prize": "Rs. 2000/-", "count": 3}
-                    ],
-                    "note": "Each winner will be awarded with a cash prize and a Certificate of Appreciation/Excellence."
-                }
-            }
-        },
-        "children": ["affiliation", "syllabus", "subjects-offered", "ptm", "scholarship", "book-list"]
     },
     "contact": {
         "title": "Contact Us",
@@ -435,8 +329,6 @@ NAVIGATION_MENUS = [
             {"title": "Mission", "slug": "mission", "href": "/about/mission", "display_order": 3},
             {"title": "Aims & Objectives", "slug": "aim", "href": "/about/aim", "display_order": 4},
             {"title": "Principal's Message", "slug": "principal-message", "href": "/about/principal-message", "display_order": 5},
-            {"title": "Mandatory Disclosure", "slug": "mandatory-disclosure", "href": "/about/mandatory-disclosure", "display_order": 6},
-            {"title": "Pallotti Group", "slug": "pallotti-group", "href": "/about/pallotti-group", "display_order": 7},
         ]
     },
     {
@@ -447,12 +339,41 @@ NAVIGATION_MENUS = [
         "display_order": 3,
         "show_in_navigation": True,
         "children": [
-            {"title": "Infrastructure", "slug": "infrastructure-overview", "href": "/infrastructure/overview", "display_order": 1},
-            {"title": "Gallery", "slug": "infrastructure-gallery", "href": "/infrastructure/gallery", "display_order": 2},
-            {"title": "Laboratory", "slug": "laboratory", "href": "/infrastructure/laboratory", "display_order": 3},
-            {"title": "Library", "slug": "library", "href": "/infrastructure/library", "display_order": 4},
-            {"title": "Computer Lab", "slug": "computer-lab", "href": "/infrastructure/computer-lab", "display_order": 5},
-            {"title": "Staff", "slug": "staff", "href": "/infrastructure/staff", "display_order": 6},
+            {"title": "Overview", "slug": "infrastructure-overview", "href": "/infrastructure/overview", "display_order": 1},
+            {"title": "Laboratory", "slug": "laboratory", "href": "/infrastructure/laboratory", "display_order": 2},
+            {"title": "Library", "slug": "library", "href": "/infrastructure/library", "display_order": 3},
+            {"title": "Computer Lab", "slug": "computer-lab", "href": "/infrastructure/computer-lab", "display_order": 4},
+            {"title": "Staff", "slug": "staff", "href": "/infrastructure/staff", "display_order": 5},
+        ]
+    },
+    {
+        "title": "Facilities",
+        "slug": "facilities",
+        "href": "/facilities",
+        "menu_type": "dropdown",
+        "display_order": 4,
+        "show_in_navigation": True,
+        "children": [
+            {"title": "Smart Class", "slug": "smart-class", "href": "/facilities/smart-class", "display_order": 1},
+            {"title": "Cafeteria", "slug": "cafeteria", "href": "/facilities/cafeteria", "display_order": 2},
+            {"title": "Auditorium", "slug": "auditorium", "href": "/facilities/auditorium", "display_order": 3},
+            {"title": "Bio Lab", "slug": "bio-lab", "href": "/facilities/bio-lab", "display_order": 4},
+            {"title": "Playground", "slug": "playground", "href": "/facilities/playground", "display_order": 5},
+        ]
+    },
+    {
+        "title": "Activities",
+        "slug": "activities",
+        "href": "/activities",
+        "menu_type": "dropdown",
+        "display_order": 5,
+        "show_in_navigation": True,
+        "children": [
+            {"title": "Cultural Activity", "slug": "cultural-activity", "href": "/activities/cultural", "display_order": 1},
+            {"title": "Co-Scholastic", "slug": "co-scholastic", "href": "/activities/co-scholastic", "display_order": 2},
+            {"title": "Olympiads", "slug": "olympiads", "href": "/activities/olympiads", "display_order": 3},
+            {"title": "Sports & Games", "slug": "sports-games", "href": "/activities/sports", "display_order": 4},
+            {"title": "Celebration", "slug": "celebration", "href": "/activities/celebration", "display_order": 5},
         ]
     },
     {
@@ -460,73 +381,20 @@ NAVIGATION_MENUS = [
         "slug": "admission",
         "href": "/admission",
         "menu_type": "dropdown",
-        "display_order": 4,
-        "show_in_navigation": True,
-        "children": [
-            {"title": "Admission", "slug": "admission-info", "href": "/admission/info", "display_order": 1},
-            {"title": "Admission Fee", "slug": "admission-fee", "href": "/admission/fee", "display_order": 2},
-            {"title": "Rules & Regulations", "slug": "rules-regulations", "href": "/admission/rules", "display_order": 3},
-        ]
-    },
-    {
-        "title": "Activity",
-        "slug": "activity",
-        "href": "/activity",
-        "menu_type": "dropdown",
-        "display_order": 5,
-        "show_in_navigation": True,
-        "children": [
-            {"title": "Cultural Activity", "slug": "cultural-activity", "href": "/activity/cultural", "display_order": 1},
-            {"title": "Co-Scholastic Activities", "slug": "co-scholastic", "href": "/activity/co-scholastic", "display_order": 2},
-            {"title": "Olympiads & UCE", "slug": "olympiads", "href": "/activity/olympiads", "display_order": 3},
-            {"title": "Sports & Games", "slug": "sports-games", "href": "/activity/sports", "display_order": 4},
-            {"title": "Recent Activity", "slug": "recent-activity", "href": "/activity/recent", "display_order": 5},
-            {"title": "Celebration", "slug": "celebration", "href": "/activity/celebration", "display_order": 6},
-        ]
-    },
-    {
-        "title": "Downloads",
-        "slug": "downloads",
-        "href": "/downloads",
-        "menu_type": "dropdown",
         "display_order": 6,
         "show_in_navigation": True,
         "children": [
-            {"title": "TC Download", "slug": "tc-download", "href": "/downloads/tc", "display_order": 1},
-            {"title": "TC Apply Form", "slug": "tc-apply", "href": "/downloads/tc-apply", "display_order": 2},
+            {"title": "Admission Info", "slug": "admission-info", "href": "/admission/info", "display_order": 1},
+            {"title": "Fee Structure", "slug": "fee-structure", "href": "/admission/fees", "display_order": 2},
+            {"title": "Rules & Regulations", "slug": "rules-regulations", "href": "/admission/rules", "display_order": 3},
         ]
-    },
-    {
-        "title": "Academics",
-        "slug": "academics",
-        "href": "/academics",
-        "menu_type": "dropdown",
-        "display_order": 7,
-        "show_in_navigation": True,
-        "children": [
-            {"title": "Affiliation", "slug": "affiliation", "href": "/academics/affiliation", "display_order": 1},
-            {"title": "Syllabus", "slug": "syllabus", "href": "/academics/syllabus", "display_order": 2},
-            {"title": "Subjects Offered", "slug": "subjects-offered", "href": "/academics/subjects", "display_order": 3},
-            {"title": "PTM", "slug": "ptm", "href": "/academics/ptm", "display_order": 4},
-            {"title": "Scholarship", "slug": "scholarship", "href": "/academics/scholarship", "display_order": 5},
-            {"title": "Book List 2023-24", "slug": "book-list", "href": "/academics/book-list", "display_order": 6},
-        ]
-    },
-    {
-        "title": "Affiliation",
-        "slug": "affiliation-main",
-        "href": "/affiliation",
-        "menu_type": "page",
-        "display_order": 8,
-        "show_in_navigation": True,
-        "children": []
     },
     {
         "title": "Contact Us",
         "slug": "contact",
         "href": "/contact",
         "menu_type": "page",
-        "display_order": 9,
+        "display_order": 7,
         "show_in_navigation": True,
         "show_in_footer": True,
         "children": []
@@ -535,15 +403,9 @@ NAVIGATION_MENUS = [
 
 
 class Command(BaseCommand):
-    help = 'Seed the database with St. Vincent Pallotti School content from stvincent.md'
+    help = 'Seed the database with St. Vincent Pallotti School content'
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--school-slug',
-            type=str,
-            default='stvincentpallottikorba',
-            help='Slug of the school to seed content for (default: stvincentpallottikorba)'
-        )
         parser.add_argument(
             '--overwrite',
             action='store_true',
@@ -561,72 +423,23 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        school_slug = options['school_slug']
         overwrite = options['overwrite']
         menus_only = options['menus_only']
         pages_only = options['pages_only']
 
-        # Get or create the school
-        try:
-            school = School.objects.get(slug=school_slug)
-            organization = school.organization
-            self.stdout.write(self.style.SUCCESS(
-                f'Found existing school: {school.name}'
-            ))
-        except School.DoesNotExist:
-            # Create organization and school
-            organization = Organization.objects.create(
-                name='St. Vincent Pallotti School Korba',
-                slug='stvincent-korba',
-                email='svpspodibahar@gmail.com',
-                phone='08463097907',
-                address='Ravi Shankar Shukla Nagar, Podibahar',
-                city='Korba',
-                state='Chhattisgarh',
-                country='India',
-                postal_code='495677',
-                is_active=True,
-                is_verified=True
-            )
-            school = School.objects.create(
-                organization=organization,
-                name='St. Vincent Pallotti School',
-                slug=school_slug,
-                short_name='SVPS Korba',
-                tagline='Go Forth To Serve',
-                description='St. Vincent Pallotti School located in Podibahar, Korba is a Co-educational Senior Secondary School affiliated to CBSE.',
-                established_year=2007,
-                email='svpspodibahar@gmail.com',
-                phone='08463097907',
-                website='https://pallottischoolkorba.edu.in',
-                address_line1='Ravi Shankar Shukla Nagar',
-                address_line2='Podibahar',
-                city='Korba',
-                state='Chhattisgarh',
-                country='India',
-                postal_code='495677',
-                is_active=True,
-                config={
-                    'affiliation_no': '3330106',
-                    'school_code': '15244',
-                    'board': 'CBSE'
-                }
-            )
-            self.stdout.write(self.style.SUCCESS(
-                f'Created new school: {school.name}'
-            ))
+        self.stdout.write(self.style.NOTICE('Starting content seeding...'))
 
         # Create menus
         if not pages_only:
-            self.create_navigation_menus(organization, school, overwrite)
+            self.create_navigation_menus(overwrite)
 
         # Create pages and sections
         if not menus_only:
-            self.create_pages_and_sections(organization, school, overwrite)
+            self.create_pages_and_sections(overwrite)
 
         self.stdout.write(self.style.SUCCESS('\n✅ Seeding complete!'))
 
-    def create_navigation_menus(self, organization, school, overwrite):
+    def create_navigation_menus(self, overwrite):
         """Create navigation menu structure"""
         self.stdout.write(self.style.NOTICE('\n📁 Creating navigation menus...'))
 
@@ -639,8 +452,6 @@ class Command(BaseCommand):
 
             # Check if menu exists
             existing = NavigationMenu.objects.filter(
-                organization=organization,
-                school=school,
                 slug=menu_data['slug'],
                 parent__isnull=True
             ).first()
@@ -660,8 +471,6 @@ class Command(BaseCommand):
             else:
                 # Create new
                 parent_menu = NavigationMenu.objects.create(
-                    organization=organization,
-                    school=school,
                     parent=None,
                     is_active=True,
                     show_in_footer=menu_data.get('show_in_footer', False),
@@ -673,10 +482,9 @@ class Command(BaseCommand):
 
             # Create children
             for child_data in children:
+                child_slug = f"{menu_data['slug']}-{child_data['slug']}"
                 child_existing = NavigationMenu.objects.filter(
-                    organization=organization,
-                    school=school,
-                    slug=child_data['slug'],
+                    slug=child_slug,
                     parent=parent_menu
                 ).first()
 
@@ -684,18 +492,20 @@ class Command(BaseCommand):
                     skipped_count += 1
                 elif child_existing:
                     for key, value in child_data.items():
-                        setattr(child_existing, key, value)
+                        if key != 'slug':
+                            setattr(child_existing, key, value)
                     child_existing.save()
                     updated_count += 1
                 else:
                     NavigationMenu.objects.create(
-                        organization=organization,
-                        school=school,
                         parent=parent_menu,
+                        slug=child_slug,
+                        title=child_data['title'],
+                        href=child_data['href'],
+                        display_order=child_data['display_order'],
                         menu_type='page',
                         is_active=True,
                         show_in_navigation=True,
-                        **child_data
                     )
                     created_count += 1
 
@@ -703,7 +513,7 @@ class Command(BaseCommand):
             f'\nMenus: Created={created_count}, Updated={updated_count}, Skipped={skipped_count}'
         ))
 
-    def create_pages_and_sections(self, organization, school, overwrite):
+    def create_pages_and_sections(self, overwrite):
         """Create pages and their sections"""
         self.stdout.write(self.style.NOTICE('\n📄 Creating pages and sections...'))
 
@@ -714,55 +524,49 @@ class Command(BaseCommand):
         section_updated = 0
 
         for page_key, page_data in SCHOOL_CONTENT.items():
-            sections_data = page_data.pop('sections', {})
-            page_data.pop('children', None)  # Remove children key if present
+            sections_data = page_data.get('sections', {})
+            page_data_copy = {k: v for k, v in page_data.items() if k not in ['sections', 'children']}
 
             # Check if page exists
-            existing_page = Page.objects.filter(
-                organization=organization,
-                school=school,
-                slug=page_data['slug']
-            ).first()
+            existing_page = Page.objects.filter(slug=page_data_copy['slug']).first()
 
             if existing_page and not overwrite:
-                self.stdout.write(f'  Skipping page: {page_data["title"]}')
+                self.stdout.write(f'  Skipping page: {page_data_copy["title"]}')
                 page_skipped += 1
                 page = existing_page
             elif existing_page:
-                existing_page.title = page_data['title']
-                existing_page.description = page_data['description']
-                existing_page.meta_title = page_data['title']
-                existing_page.meta_description = page_data['description'][:160]
+                existing_page.title = page_data_copy['title']
+                existing_page.description = page_data_copy['description']
+                existing_page.meta_title = page_data_copy['title']
+                existing_page.meta_description = page_data_copy['description'][:160]
                 existing_page.is_published = True
                 existing_page.published_at = timezone.now()
                 existing_page.save()
-                self.stdout.write(self.style.SUCCESS(f'  Updated page: {page_data["title"]}'))
+                self.stdout.write(self.style.SUCCESS(f'  Updated page: {page_data_copy["title"]}'))
                 page_updated += 1
                 page = existing_page
             else:
                 page = Page.objects.create(
-                    organization=organization,
-                    school=school,
-                    title=page_data['title'],
-                    slug=page_data['slug'],
-                    description=page_data['description'],
-                    meta_title=page_data['title'],
-                    meta_description=page_data['description'][:160],
+                    title=page_data_copy['title'],
+                    slug=page_data_copy['slug'],
+                    description=page_data_copy['description'],
+                    meta_title=page_data_copy['title'],
+                    meta_description=page_data_copy['description'][:160],
                     is_published=True,
                     published_at=timezone.now()
                 )
-                self.stdout.write(self.style.SUCCESS(f'  Created page: {page_data["title"]}'))
+                self.stdout.write(self.style.SUCCESS(f'  Created page: {page_data_copy["title"]}'))
                 page_created += 1
 
             # Create sections for the page
+            # Home page sections should show in landing page
+            is_home_page = page_key == 'home'
             order = 0
             for section_key, section_data in sections_data.items():
                 order += 1
                 section_slug = slugify(section_key)
 
                 existing_section = Section.objects.filter(
-                    organization=organization,
-                    school=school,
                     page=page,
                     slug=section_slug
                 ).first()
@@ -775,19 +579,21 @@ class Command(BaseCommand):
                     existing_section.content = section_data['content']
                     existing_section.display_order = order
                     existing_section.is_visible = True
+                    existing_section.show_in_landing_page = is_home_page
+                    existing_section.landing_page_order = order if is_home_page else 0
                     existing_section.save()
                     section_updated += 1
                 else:
                     Section.objects.create(
-                        organization=organization,
-                        school=school,
                         page=page,
                         title=section_data['title'],
                         slug=section_slug,
                         section_type=section_data['type'],
                         content=section_data['content'],
                         display_order=order,
-                        is_visible=True
+                        is_visible=True,
+                        show_in_landing_page=is_home_page,
+                        landing_page_order=order if is_home_page else 0
                     )
                     section_created += 1
 

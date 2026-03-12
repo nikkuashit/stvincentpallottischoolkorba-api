@@ -1,5 +1,6 @@
 """
 Views for Accounts App - User Management with RBAC
+Simplified without multi-tenancy
 """
 
 from rest_framework import viewsets, status
@@ -8,10 +9,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from django.contrib.auth.models import User
 from django.db.models import Q
-from .models import Role, UserProfile
+from .models import UserProfile
 from .serializers import (
-    RoleSerializer, UserSerializer, UserProfileSerializer,
-    UserCreateSerializer, UserUpdateSerializer, PasswordChangeSerializer
+    UserSerializer, UserProfileSerializer, UserListSerializer,
+    UserCreateSerializer, UserUpdateSerializer, PasswordChangeSerializer,
+    RoleSerializer
 )
 
 
@@ -39,50 +41,10 @@ class IsSuperAdmin(BasePermission):
         )
 
 
-class RoleViewSet(viewsets.ModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for Role management
-    Only admins and super admins can manage roles
-    """
-    serializer_class = RoleSerializer
-    permission_classes = [IsAdminOrStaff]
-
-    def get_queryset(self):
-        """
-        Filter roles based on user's organization
-        Super admins can see all roles
-        """
-        user = self.request.user
-
-        if user.is_superuser:
-            return Role.objects.all()
-
-        # Get user's profile to filter by organization
-        try:
-            profile = user.profile
-            return Role.objects.filter(organization=profile.organization)
-        except UserProfile.DoesNotExist:
-            return Role.objects.none()
-
-    def perform_create(self, serializer):
-        """
-        Create role with proper organization context
-        """
-        # If not super admin, use user's organization
-        if not self.request.user.is_superuser:
-            try:
-                profile = self.request.user.profile
-                serializer.save(organization=profile.organization)
-            except UserProfile.DoesNotExist:
-                raise ValueError("User must have a profile to create roles")
-        else:
-            serializer.save()
-
-
-class UserProfileViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for UserProfile management
-    Only admins and super admins can manage users
+    ViewSet for User management
+    Handles CRUD operations for users with profiles
     """
     permission_classes = [IsAdminOrStaff]
 
@@ -94,51 +56,37 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             return UserCreateSerializer
         elif self.action in ['update', 'partial_update']:
             return UserUpdateSerializer
+        elif self.action == 'list':
+            return UserListSerializer
         return UserProfileSerializer
 
     def get_queryset(self):
         """
-        Filter users based on user's organization
-        Super admins can see all users
+        Return all user profiles with filtering support
         """
-        user = self.request.user
-
-        if user.is_superuser:
-            queryset = UserProfile.objects.all()
-        else:
-            # Get user's profile to filter by organization
-            try:
-                profile = user.profile
-                queryset = UserProfile.objects.filter(organization=profile.organization)
-            except UserProfile.DoesNotExist:
-                return UserProfile.objects.none()
+        queryset = UserProfile.objects.select_related('user').all()
 
         # Support filtering by query parameters
-        organization_id = self.request.query_params.get('organization', None)
-        school_id = self.request.query_params.get('school', None)
-        role_id = self.request.query_params.get('role', None)
+        role = self.request.query_params.get('role', None)
         is_active = self.request.query_params.get('is_active', None)
         search = self.request.query_params.get('search', None)
 
-        if organization_id:
-            queryset = queryset.filter(organization_id=organization_id)
-        if school_id:
-            queryset = queryset.filter(school_id=school_id)
-        if role_id:
-            queryset = queryset.filter(role_id=role_id)
+        if role:
+            queryset = queryset.filter(role=role)
         if is_active is not None:
             is_active_bool = is_active.lower() in ['true', '1', 'yes']
-            queryset = queryset.filter(is_active=is_active_bool)
+            queryset = queryset.filter(user__is_active=is_active_bool)
         if search:
             queryset = queryset.filter(
                 Q(user__username__icontains=search) |
                 Q(user__email__icontains=search) |
                 Q(user__first_name__icontains=search) |
                 Q(user__last_name__icontains=search) |
-                Q(employee_id__icontains=search)
+                Q(employee_id__icontains=search) |
+                Q(admission_no__icontains=search)
             )
 
-        return queryset.select_related('user', 'organization', 'school', 'role')
+        return queryset.order_by('-user__date_joined')
 
     def create(self, request, *args, **kwargs):
         """
@@ -146,22 +94,6 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        # If not super admin, ensure organization matches
-        if not request.user.is_superuser:
-            try:
-                profile = request.user.profile
-                if str(serializer.validated_data['organization']) != str(profile.organization.id):
-                    return Response(
-                        {'error': 'Cannot create user for different organization'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except UserProfile.DoesNotExist:
-                return Response(
-                    {'error': 'User must have a profile'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-
         profile = serializer.save()
 
         # Return the profile data
@@ -170,26 +102,44 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
 
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Get a single user profile by pk (user's pk, not profile's id)
+        """
+        pk = kwargs.get('pk')
+        try:
+            # Try to get by user pk first
+            profile = UserProfile.objects.select_related('user').get(user__pk=pk)
+        except UserProfile.DoesNotExist:
+            # Try by profile id
+            try:
+                profile = UserProfile.objects.select_related('user').get(pk=pk)
+            except (UserProfile.DoesNotExist, ValueError):
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        serializer = UserProfileSerializer(profile)
+        return Response(serializer.data)
+
     def update(self, request, *args, **kwargs):
         """
         Update user and profile
         """
         partial = kwargs.pop('partial', False)
-        instance = self.get_object()
+        pk = kwargs.get('pk')
 
-        # Check permission to update this user
-        if not request.user.is_superuser:
+        try:
+            # Try to get by user pk first
+            instance = UserProfile.objects.select_related('user').get(user__pk=pk)
+        except UserProfile.DoesNotExist:
             try:
-                profile = request.user.profile
-                if instance.organization != profile.organization:
-                    return Response(
-                        {'error': 'Cannot update user from different organization'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except UserProfile.DoesNotExist:
+                instance = UserProfile.objects.select_related('user').get(pk=pk)
+            except (UserProfile.DoesNotExist, ValueError):
                 return Response(
-                    {'error': 'User must have a profile'},
-                    status=status.HTTP_403_FORBIDDEN
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
                 )
 
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -202,27 +152,21 @@ class UserProfileViewSet(viewsets.ModelViewSet):
         """
         Soft delete user by deactivating
         """
-        instance = self.get_object()
+        pk = kwargs.get('pk')
 
-        # Check permission to delete this user
-        if not request.user.is_superuser:
+        try:
+            instance = UserProfile.objects.select_related('user').get(user__pk=pk)
+        except UserProfile.DoesNotExist:
             try:
-                profile = request.user.profile
-                if instance.organization != profile.organization:
-                    return Response(
-                        {'error': 'Cannot delete user from different organization'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except UserProfile.DoesNotExist:
+                instance = UserProfile.objects.select_related('user').get(pk=pk)
+            except (UserProfile.DoesNotExist, ValueError):
                 return Response(
-                    {'error': 'User must have a profile'},
-                    status=status.HTTP_403_FORBIDDEN
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
                 )
 
         # Soft delete - deactivate instead of deleting
-        instance.is_active = False
         instance.user.is_active = False
-        instance.save()
         instance.user.save()
 
         return Response(
@@ -230,46 +174,25 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             status=status.HTTP_204_NO_CONTENT
         )
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def change_password(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_path='set_password')
+    def set_password(self, request, pk=None):
         """
-        Change user password
-        Users can change their own password
-        Admins can change any user's password in their organization
+        Set password for a user (admin only)
         """
-        user_profile = self.get_object()
-        user = user_profile.user
-
-        # Check if user can change this password
-        if request.user.id != user.id:
-            # Only admins can change other users' passwords
-            if not (request.user.is_staff or request.user.is_superuser):
+        try:
+            profile = UserProfile.objects.select_related('user').get(user__pk=pk)
+        except UserProfile.DoesNotExist:
+            try:
+                profile = UserProfile.objects.select_related('user').get(pk=pk)
+            except (UserProfile.DoesNotExist, ValueError):
                 return Response(
-                    {'error': 'Permission denied'},
-                    status=status.HTTP_403_FORBIDDEN
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
                 )
 
-            # Check organization match for non-superusers
-            if not request.user.is_superuser:
-                try:
-                    admin_profile = request.user.profile
-                    if user_profile.organization != admin_profile.organization:
-                        return Response(
-                            {'error': 'Cannot change password for user in different organization'},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
-                except UserProfile.DoesNotExist:
-                    return Response(
-                        {'error': 'Admin must have a profile'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-
-        serializer = PasswordChangeSerializer(
-            data=request.data,
-            context={'request': request}
-        )
+        serializer = PasswordChangeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        serializer.save(user=profile.user)
 
         return Response(
             {'message': 'Password changed successfully'},
@@ -286,7 +209,54 @@ class UserProfileViewSet(viewsets.ModelViewSet):
             serializer = UserProfileSerializer(profile)
             return Response(serializer.data)
         except UserProfile.DoesNotExist:
-            return Response(
-                {'error': 'User profile not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            # Return basic user info if no profile
+            return Response({
+                'pk': request.user.pk,
+                'username': request.user.username,
+                'email': request.user.email,
+                'first_name': request.user.first_name,
+                'last_name': request.user.last_name,
+                'is_active': request.user.is_active,
+                'is_staff': request.user.is_staff,
+                'is_superuser': request.user.is_superuser,
+                'role': 'super_admin' if request.user.is_superuser else ('school_admin' if request.user.is_staff else 'student')
+            })
+
+
+class RoleViewSet(viewsets.ViewSet):
+    """
+    ViewSet for listing available roles
+    """
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        """
+        Return list of available roles
+        """
+        roles = [
+            {
+                'id': 'school_admin',
+                'name': 'school_admin',
+                'display_name': 'School Administrator',
+                'description': 'Full access to school management'
+            },
+            {
+                'id': 'school_staff',
+                'name': 'school_staff',
+                'display_name': 'School Staff / Teacher',
+                'description': 'Access to class management, attendance, and grades'
+            },
+            {
+                'id': 'parent',
+                'name': 'parent',
+                'display_name': 'Parent / Guardian',
+                'description': 'View children\'s information'
+            },
+            {
+                'id': 'student',
+                'name': 'student',
+                'display_name': 'Student',
+                'description': 'View own information'
+            },
+        ]
+        return Response(roles)
