@@ -62,17 +62,17 @@ urlpatterns = [
          name='schema-redoc'),
 
     # Authentication endpoints
-    path('api/auth/', include('dj_rest_auth.urls')),
-    path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
+    path('auth/', include('dj_rest_auth.urls')),
+    path('auth/registration/', include('dj_rest_auth.registration.urls')),
 
     # Accounts API endpoints (User Management)
-    path('api/accounts/', include('accounts.urls')),
+    path('accounts/', include('accounts.urls')),
 
     # CMS API endpoints
-    path('api/cms/', include('cms.urls')),
+    path('cms/', include('cms.urls')),
 
     # Communications API endpoints (News, Events, Announcements)
-    path('api/communications/', include('communications.urls')),
+    path('communications/', include('communications.urls')),
 ]
 
 # Serve static and media files
