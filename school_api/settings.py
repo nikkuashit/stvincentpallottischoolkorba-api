@@ -264,10 +264,6 @@ ACCOUNT_AUTHENTICATION_METHOD = 'username_email'  # Allow login with username or
 # Allow all origins
 CORS_ALLOW_ALL_ORIGINS = True
 
-CORS_ALLOWED_ORIGINS = [
-    "*",
-]
-
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_METHODS = [
