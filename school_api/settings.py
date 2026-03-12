@@ -147,8 +147,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "/api/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_URL = "/static/"
+STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
 
 # Additional locations of static files
 STATICFILES_DIRS = [
@@ -162,8 +162,11 @@ STATICFILES_FINDERS = [
 ]
 
 # Media files
-MEDIA_URL = "/api/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
+
+
+# MEDIA_ROOT = '/home/rmoktvux3m8e/public_html/hadoti.curiositydesk.com/media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
