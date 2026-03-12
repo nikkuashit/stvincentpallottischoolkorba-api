@@ -14,7 +14,7 @@ from drf_yasg import openapi
 schema_view = get_schema_view(
     openapi.Info(
         title="School Management API",
-        default_version='v1',
+        default_version="v1",
         description="""
         # School Management System API
 
@@ -47,39 +47,35 @@ schema_view = get_schema_view(
 urlpatterns = [
     # Admin panel
     path("admin/", admin.site.urls),
-
     # API Documentation - Swagger UI
-    re_path(r'^swagger(?P<format>\.json|\.yaml)$',
-            schema_view.without_ui(cache_timeout=0),
-            name='schema-json'),
-    path('swagger/',
-         schema_view.with_ui('swagger', cache_timeout=0),
-         name='schema-swagger-ui'),
-
+    re_path(
+        r"^swagger(?P<format>\.json|\.yaml)$",
+        schema_view.without_ui(cache_timeout=0),
+        name="schema-json",
+    ),
+    path(
+        "swagger/",
+        schema_view.with_ui("swagger", cache_timeout=0),
+        name="schema-swagger-ui",
+    ),
     # API Documentation - ReDoc
-    path('redoc/',
-         schema_view.with_ui('redoc', cache_timeout=0),
-         name='schema-redoc'),
-
+    path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
     # Authentication endpoints
-    path('auth/', include('dj_rest_auth.urls')),
-    path('auth/registration/', include('dj_rest_auth.registration.urls')),
-
+    path("auth/", include("dj_rest_auth.urls")),
+    path("auth/registration/", include("dj_rest_auth.registration.urls")),
     # Accounts API endpoints (User Management)
-    path('accounts/', include('accounts.urls')),
-
+    path("accounts/", include("accounts.urls")),
     # CMS API endpoints
-    path('cms/', include('cms.urls')),
-
+    path("cms/", include("cms.urls")),
     # Communications API endpoints (News, Events, Announcements)
-    path('communications/', include('communications.urls')),
+    path("communications/", include("communications.urls")),
 ]
 
 # Serve static and media files
 # In production, whitenoise middleware handles static files
 # But we keep this for development and as fallback
-urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+# urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Customize admin site
 admin.site.site_header = "School Management Admin"
