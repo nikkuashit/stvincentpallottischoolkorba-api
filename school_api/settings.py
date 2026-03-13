@@ -75,7 +75,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # CORS middleware - must be before CommonMiddleware
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    # "django.middleware.csrf.CsrfViewMiddleware",  # Disabled - using JWT auth, not cookies
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -148,7 +148,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "/static/"
-STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
+# STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Additional locations of static files
 STATICFILES_DIRS = [
@@ -163,8 +164,8 @@ STATICFILES_FINDERS = [
 
 # Media files
 MEDIA_URL = "/media/"
-MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
-
+# MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # MEDIA_ROOT = '/home/rmoktvux3m8e/public_html/hadoti.curiositydesk.com/media'
 
@@ -181,7 +182,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
@@ -288,7 +288,6 @@ CORS_ALLOW_HEADERS = [
     "dnt",
     "origin",
     "user-agent",
-    "x-csrftoken",
     "x-requested-with",
 ]
 
