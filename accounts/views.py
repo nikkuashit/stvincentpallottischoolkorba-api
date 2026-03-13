@@ -13,7 +13,7 @@ from .models import UserProfile
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserListSerializer,
     UserCreateSerializer, UserUpdateSerializer, PasswordChangeSerializer,
-    RoleSerializer
+    SelfPasswordChangeSerializer, RoleSerializer
 )
 
 
@@ -221,6 +221,26 @@ class UserViewSet(viewsets.ModelViewSet):
                 'is_superuser': request.user.is_superuser,
                 'role': 'super_admin' if request.user.is_superuser else ('school_admin' if request.user.is_staff else 'student')
             })
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='change-password')
+    def change_password(self, request):
+        """
+        Allow authenticated user to change their own password.
+        If must_change_password is True, current_password is not required.
+        Optionally allows changing username as well.
+        """
+        serializer = SelfPasswordChangeSerializer(
+            data=request.data,
+            context={'user': request.user}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response({
+            'message': 'Password changed successfully',
+            'username': request.user.username,
+            'must_change_password': False
+        })
 
 
 class RoleViewSet(viewsets.ViewSet):

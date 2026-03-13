@@ -81,6 +81,14 @@ class Student(models.Model):
         blank=True,
         related_name='students'
     )
+    academic_year = models.ForeignKey(
+        AcademicYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='students',
+        help_text='Current academic session for the student'
+    )
     user_profile = models.OneToOneField(
         'accounts.UserProfile',
         on_delete=models.CASCADE,

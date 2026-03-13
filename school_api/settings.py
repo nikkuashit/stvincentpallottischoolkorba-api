@@ -65,6 +65,8 @@ INSTALLED_APPS = [
     "cms",  # Content management (pages, galleries, documents)
     "academics",  # Academic management (students, classes, courses)
     "communications",  # News, events, announcements
+    "workflows",  # Request & approval workflow system
+    "notifications",  # Notification system
 ]
 
 SITE_ID = 1
@@ -148,8 +150,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "/static/"
-# STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
+# STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Additional locations of static files
 STATICFILES_DIRS = [
@@ -164,10 +166,9 @@ STATICFILES_FINDERS = [
 
 # Media files
 MEDIA_URL = "/media/"
-# MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
+# MEDIA_ROOT = BASE_DIR / "media"
 
-# MEDIA_ROOT = '/home/rmoktvux3m8e/public_html/hadoti.curiositydesk.com/media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -68,6 +68,12 @@ class UserProfile(models.Model):
     admission_no = models.CharField(max_length=50, blank=True)
     roll_no = models.CharField(max_length=20, blank=True)
 
+    # Security
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text='User must change password on next login'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

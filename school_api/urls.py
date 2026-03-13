@@ -69,6 +69,12 @@ urlpatterns = [
     path("cms/", include("cms.urls")),
     # Communications API endpoints (News, Events, Announcements)
     path("communications/", include("communications.urls")),
+    # Workflows API endpoints (Requests, Approvals, Clearances)
+    path("workflows/", include("workflows.urls")),
+    # Notifications API endpoints
+    path("notifications/", include("notifications.urls")),
+    # Academics API endpoints (Students, Classes, Academic Years)
+    path("academics/", include("academics.urls")),
 ]
 
 # Serve static and media files

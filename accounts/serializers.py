@@ -13,11 +13,12 @@ class JWTUserDetailsSerializer(serializers.ModelSerializer):
     Includes role from profile for RBAC.
     """
     role = serializers.SerializerMethodField()
+    must_change_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['pk', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser', 'role']
-        read_only_fields = ['pk', 'is_staff', 'is_superuser', 'role']
+        fields = ['pk', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'is_superuser', 'role', 'must_change_password']
+        read_only_fields = ['pk', 'is_staff', 'is_superuser', 'role', 'must_change_password']
 
     def get_role(self, obj):
         """Get role from user profile"""
@@ -29,6 +30,13 @@ class JWTUserDetailsSerializer(serializers.ModelSerializer):
             elif obj.is_staff:
                 return 'school_admin'
             return 'student'
+
+    def get_must_change_password(self, obj):
+        """Check if user must change password on login"""
+        try:
+            return obj.profile.must_change_password
+        except UserProfile.DoesNotExist:
+            return False
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -81,6 +89,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'avatar', 'bio',
             'employee_id', 'department', 'designation',
             'admission_no', 'roll_no',
+            'must_change_password',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'pk', 'created_at', 'updated_at']
@@ -268,6 +277,65 @@ class PasswordChangeSerializer(serializers.Serializer):
         """Set new password for user"""
         user.set_password(self.validated_data['password'])
         user.save()
+        return user
+
+
+class SelfPasswordChangeSerializer(serializers.Serializer):
+    """Serializer for users to change their own password"""
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_username = serializers.CharField(max_length=150, required=False)
+
+    def validate_new_username(self, value):
+        """Check if new username is available"""
+        user = self.context.get('user')
+        if value and value != user.username:
+            if User.objects.filter(username=value).exclude(pk=user.pk).exists():
+                raise serializers.ValidationError("Username already taken")
+        return value
+
+    def validate(self, data):
+        """Validate current password if user is not forced to change"""
+        user = self.context.get('user')
+        profile = getattr(user, 'profile', None)
+
+        # If must_change_password is True, don't require current password
+        if profile and profile.must_change_password:
+            return data
+
+        # Otherwise, require current password verification
+        current_password = data.get('current_password')
+        if not current_password:
+            raise serializers.ValidationError({
+                'current_password': 'Current password is required'
+            })
+
+        if not user.check_password(current_password):
+            raise serializers.ValidationError({
+                'current_password': 'Current password is incorrect'
+            })
+
+        return data
+
+    def save(self):
+        """Update password and optionally username"""
+        user = self.context.get('user')
+        validated_data = self.validated_data
+
+        # Update password
+        user.set_password(validated_data['new_password'])
+
+        # Update username if provided
+        if validated_data.get('new_username'):
+            user.username = validated_data['new_username']
+
+        user.save()
+
+        # Clear must_change_password flag
+        if hasattr(user, 'profile'):
+            user.profile.must_change_password = False
+            user.profile.save()
+
         return user
 
 
