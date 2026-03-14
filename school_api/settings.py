@@ -157,10 +157,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "/static/"
-STATIC_ROOT = config(
-    "STATIC_ROOT",
-    default=str(BASE_DIR / "staticfiles"),
-)
+STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
+# STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Additional locations of static files
 STATICFILES_DIRS = [
@@ -175,10 +173,8 @@ STATICFILES_FINDERS = [
 
 # Media files
 MEDIA_URL = "/media/"
-MEDIA_ROOT = config(
-    "MEDIA_ROOT",
-    default=str(BASE_DIR / "media"),
-)
+MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
+# MEDIA_ROOT = BASE_DIR / "media"
 
 
 # Default primary key field type
