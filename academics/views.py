@@ -222,6 +222,51 @@ class ParentViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by('first_name', 'last_name')
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def my_children(self, request):
+        """
+        Get children (students) associated with the logged-in parent.
+        Returns list of students linked to the parent's user profile.
+        """
+        user = request.user
+
+        # Check if user has a profile with parent role
+        if not hasattr(user, 'profile'):
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        profile = user.profile
+        if profile.role != 'parent':
+            return Response(
+                {'error': 'This endpoint is only for parent users'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Find the Parent record associated with this user profile
+        try:
+            parent = Parent.objects.get(user_profile=profile)
+        except Parent.DoesNotExist:
+            # Try to find by email match as fallback
+            try:
+                parent = Parent.objects.get(email=user.email, is_active=True)
+            except Parent.DoesNotExist:
+                return Response(
+                    {'children': [], 'message': 'No children found for this parent'},
+                    status=status.HTTP_200_OK
+                )
+
+        # Get all active students linked to this parent
+        students = parent.students.filter(status='active').select_related('current_class')
+        serializer = StudentListSerializer(students, many=True)
+
+        return Response({
+            'children': serializer.data,
+            'parent_name': f"{parent.first_name} {parent.last_name}",
+            'count': students.count()
+        })
+
 
 class SubjectViewSet(viewsets.ModelViewSet):
     """ViewSet for Subject management"""

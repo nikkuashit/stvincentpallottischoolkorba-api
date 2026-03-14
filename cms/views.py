@@ -81,6 +81,26 @@ class PageViewSet(viewsets.ModelViewSet):
     ordering = ['title']
     lookup_field = 'slug'
 
+    def get_object(self):
+        """
+        Override to support lookup by both UUID (id) and slug.
+        Tries UUID first, falls back to slug if not a valid UUID.
+        """
+        import uuid as uuid_module
+        lookup_value = self.kwargs.get(self.lookup_url_kwarg or self.lookup_field)
+
+        # Try to parse as UUID first
+        try:
+            uuid_module.UUID(str(lookup_value))
+            # It's a valid UUID, look up by id
+            self.kwargs['pk'] = lookup_value
+            self.lookup_field = 'pk'
+        except (ValueError, TypeError):
+            # Not a UUID, use slug lookup (default)
+            pass
+
+        return super().get_object()
+
     def get_queryset(self):
         """Show only published pages for non-staff users"""
         queryset = super().get_queryset()

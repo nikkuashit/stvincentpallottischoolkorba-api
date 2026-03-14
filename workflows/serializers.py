@@ -197,11 +197,26 @@ class RequestHistorySerializer(serializers.ModelSerializer):
         return None
 
 
+class StudentMinimalSerializer(serializers.Serializer):
+    """Minimal serializer for student info"""
+    id = serializers.UUIDField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    admission_number = serializers.CharField()
+    current_class_name = serializers.SerializerMethodField()
+
+    def get_current_class_name(self, obj):
+        if obj.current_class:
+            return obj.current_class.name
+        return None
+
+
 class RequestListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing requests"""
     request_type_name = serializers.CharField(source='request_type.name', read_only=True)
     submitted_by_name = serializers.SerializerMethodField()
-    student_name = serializers.SerializerMethodField()
+    student_names = serializers.SerializerMethodField()
+    students_data = StudentMinimalSerializer(source='students', many=True, read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
 
@@ -209,7 +224,7 @@ class RequestListSerializer(serializers.ModelSerializer):
         model = Request
         fields = [
             'id', 'request_number', 'title', 'request_type', 'request_type_name',
-            'submitted_by', 'submitted_by_name', 'on_behalf_of_student', 'student_name',
+            'submitted_by', 'submitted_by_name', 'students', 'student_names', 'students_data',
             'status', 'status_display', 'priority', 'priority_display',
             'is_bypassed', 'payment_status', 'attachments_count',
             'submitted_at', 'completed_at', 'created_at', 'updated_at'
@@ -218,9 +233,10 @@ class RequestListSerializer(serializers.ModelSerializer):
     def get_submitted_by_name(self, obj):
         return obj.submitted_by.get_full_name() or obj.submitted_by.username
 
-    def get_student_name(self, obj):
-        if obj.on_behalf_of_student:
-            return f"{obj.on_behalf_of_student.first_name} {obj.on_behalf_of_student.last_name}"
+    def get_student_names(self, obj):
+        students = obj.students.all()
+        if students:
+            return ", ".join([f"{s.first_name} {s.last_name}" for s in students])
         return None
 
 
@@ -236,7 +252,8 @@ class RequestDetailSerializer(serializers.ModelSerializer):
     history = RequestHistorySerializer(many=True, read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    student_name = serializers.SerializerMethodField()
+    student_names = serializers.SerializerMethodField()
+    students_data = StudentMinimalSerializer(source='students', many=True, read_only=True)
 
     class Meta:
         model = Request
@@ -244,7 +261,7 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             'id', 'request_number', 'title', 'description', 'form_data',
             'request_type', 'request_type_data',
             'submitted_by', 'submitted_by_data',
-            'on_behalf_of_student', 'student_name',
+            'students', 'student_names', 'students_data',
             'status', 'status_display', 'priority', 'priority_display',
             'current_step', 'current_step_data',
             'is_bypassed', 'bypassed_by', 'bypassed_by_data', 'bypassed_at', 'bypass_reason',
@@ -254,23 +271,40 @@ class RequestDetailSerializer(serializers.ModelSerializer):
             'approvals', 'clearances', 'attachments', 'history'
         ]
 
-    def get_student_name(self, obj):
-        if obj.on_behalf_of_student:
-            return f"{obj.on_behalf_of_student.first_name} {obj.on_behalf_of_student.last_name}"
+    def get_student_names(self, obj):
+        students = obj.students.all()
+        if students:
+            return ", ".join([f"{s.first_name} {s.last_name}" for s in students])
         return None
 
 
 class RequestCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating new requests"""
+    students = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        write_only=True,
+        help_text="List of student IDs this request is for"
+    )
+
     class Meta:
         model = Request
         fields = [
             'request_type', 'title', 'description', 'form_data',
-            'on_behalf_of_student', 'priority'
+            'students', 'priority'
         ]
 
+    def to_representation(self, instance):
+        """Use RequestListSerializer for response"""
+        return RequestListSerializer(instance, context=self.context).data
+
     def create(self, validated_data):
+        from academics.models import Student
+
         user = self.context['request'].user
+        student_ids = validated_data.pop('students', [])
+
         validated_data['submitted_by'] = user
 
         # Check payment requirements
@@ -280,6 +314,11 @@ class RequestCreateSerializer(serializers.ModelSerializer):
             validated_data['payment_amount'] = request_type.payment_amount
 
         request_obj = super().create(validated_data)
+
+        # Add students (ManyToMany relationship)
+        if student_ids:
+            students = Student.objects.filter(id__in=student_ids)
+            request_obj.students.set(students)
 
         # Create approval records if workflow exists
         if request_type.approval_workflow:
@@ -323,6 +362,7 @@ class RequestSubmitSerializer(serializers.Serializer):
     """Serializer for submitting a draft request"""
     def update(self, instance, validated_data):
         from django.utils import timezone
+        from notifications.models import send_request_notification
         user = self.context['request'].user
 
         if instance.status != 'draft':
@@ -348,6 +388,12 @@ class RequestSubmitSerializer(serializers.Serializer):
             new_status=instance.status,
             comments='Request submitted for processing'
         )
+
+        # Send notifications to approvers/clearance staff
+        if instance.status == 'pending_approval':
+            send_request_notification(instance, 'request_pending_approval')
+        elif instance.status == 'pending_clearance':
+            send_request_notification(instance, 'request_pending_clearance')
 
         return instance
 

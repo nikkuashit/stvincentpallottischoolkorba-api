@@ -77,6 +77,9 @@ urlpatterns = [
     path("academics/", include("academics.urls")),
 ]
 
+# urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+# urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
 # Serve static and media files
 # In production, whitenoise middleware handles static files
 # But we keep this for development and as fallback

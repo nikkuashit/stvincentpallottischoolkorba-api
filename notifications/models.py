@@ -444,17 +444,33 @@ def send_request_notification(request_obj, event_type, recipient_users=None):
     if recipient_users is None:
         recipient_users = []
 
-        if event_type in ['request_submitted', 'request_pending_approval']:
-            # Notify next approver(s)
-            if request_obj.current_step:
+        if event_type in ['request_submitted', 'request_pending_approval', 'request_pending_clearance']:
+            # Always notify super_admin and school_admin for new requests
+            from accounts.models import UserProfile
+            admin_profiles = UserProfile.objects.filter(
+                role__in=['super_admin', 'school_admin']
+            )
+            recipient_users = list(set([p.user for p in admin_profiles]))
+
+            # Also notify next approver(s) if there's an approval workflow
+            if event_type == 'request_pending_approval' and request_obj.current_step:
                 step = request_obj.current_step
                 if step.approver_type == 'role':
                     # Get all users with this role
-                    from accounts.models import UserProfile
                     profiles = UserProfile.objects.filter(role=step.approver_role)
-                    recipient_users = [p.user for p in profiles]
-                elif step.approver_user:
-                    recipient_users = [step.approver_user]
+                    role_users = [p.user for p in profiles]
+                    recipient_users = list(set(recipient_users + role_users))
+                elif step.approver_user and step.approver_user not in recipient_users:
+                    recipient_users.append(step.approver_user)
+
+            # Notify clearance staff if pending clearance
+            if event_type == 'request_pending_clearance':
+                from workflows.models import ClearanceType
+                clearance_types = ClearanceType.objects.filter(is_active=True)
+                for ct in clearance_types:
+                    profiles = UserProfile.objects.filter(role=ct.clearance_role)
+                    clearance_users = [p.user for p in profiles]
+                    recipient_users = list(set(recipient_users + clearance_users))
 
         elif event_type in ['request_approved', 'request_rejected', 'request_completed', 'request_bypassed']:
             # Notify the requester
@@ -467,15 +483,17 @@ def send_request_notification(request_obj, event_type, recipient_users=None):
             'request_approved': f"Request Approved: {request_obj.request_number}",
             'request_rejected': f"Request Rejected: {request_obj.request_number}",
             'request_pending_approval': f"Pending Approval: {request_obj.request_number}",
+            'request_pending_clearance': f"Pending Clearance: {request_obj.request_number}",
             'request_completed': f"Request Completed: {request_obj.request_number}",
             'request_bypassed': f"Request Bypassed: {request_obj.request_number}",
         }
 
         body_map = {
-            'request_submitted': f"A new {request_obj.request_type.name} request has been submitted.",
+            'request_submitted': f"A new {request_obj.request_type.name} request has been submitted by {request_obj.submitted_by.get_full_name() or request_obj.submitted_by.username}.",
             'request_approved': f"Your {request_obj.request_type.name} request has been approved.",
             'request_rejected': f"Your {request_obj.request_type.name} request has been rejected.",
-            'request_pending_approval': f"A {request_obj.request_type.name} request is pending your approval.",
+            'request_pending_approval': f"A {request_obj.request_type.name} request from {request_obj.submitted_by.get_full_name() or request_obj.submitted_by.username} is pending approval.",
+            'request_pending_clearance': f"A {request_obj.request_type.name} request from {request_obj.submitted_by.get_full_name() or request_obj.submitted_by.username} requires clearance.",
             'request_completed': f"Your {request_obj.request_type.name} request has been completed.",
             'request_bypassed': f"Your {request_obj.request_type.name} request has been approved (bypassed by admin).",
         }

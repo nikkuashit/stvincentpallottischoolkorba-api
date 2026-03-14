@@ -291,13 +291,12 @@ class Request(models.Model):
         on_delete=models.PROTECT,
         related_name='submitted_requests'
     )
-    # For parent submitting on behalf of student
-    on_behalf_of_student = models.ForeignKey(
+    # For parent submitting on behalf of student(s) - supports multiple children
+    students = models.ManyToManyField(
         'academics.Student',
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
-        related_name='requests'
+        related_name='requests',
+        help_text="Student(s) this request is for (parent can select one or multiple children)"
     )
 
     # Request details
@@ -371,7 +370,6 @@ class Request(models.Model):
             models.Index(fields=['submitted_by', 'status']),
             models.Index(fields=['request_type', 'status']),
             models.Index(fields=['status', 'priority']),
-            models.Index(fields=['on_behalf_of_student']),
         ]
 
     def __str__(self):

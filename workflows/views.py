@@ -24,6 +24,7 @@ from .models import (
     can_bypass_approval,
     process_bypass,
 )
+from notifications.models import send_request_notification
 from .serializers import (
     RequestTypeListSerializer,
     RequestTypeDetailSerializer,
@@ -78,10 +79,14 @@ class RequestTypeViewSet(viewsets.ReadOnlyModelViewSet):
             user_role = self.request.user.profile.role
             # Filter request types that include this role in allowed_roles
             # or have empty allowed_roles (available to all)
-            queryset = queryset.filter(
-                Q(allowed_roles__contains=[user_role]) |
-                Q(allowed_roles=[])
-            )
+            # Note: Using Python filtering for SQLite compatibility (JSON contains not supported)
+            all_request_types = list(queryset)
+            allowed_ids = []
+            for rt in all_request_types:
+                # Allow if roles list is empty (available to all) or user's role is in the list
+                if not rt.allowed_roles or user_role in rt.allowed_roles:
+                    allowed_ids.append(rt.id)
+            queryset = queryset.filter(id__in=allowed_ids)
 
         return queryset
 
@@ -292,6 +297,12 @@ class RequestViewSet(viewsets.ModelViewSet):
             details={'approval_step': pending_approval.approval_step.name}
         )
 
+        # Send notification to the requester about status change
+        if instance.status == 'approved':
+            send_request_notification(instance, 'request_approved')
+        elif instance.status == 'rejected':
+            send_request_notification(instance, 'request_rejected')
+
         return Response(RequestDetailSerializer(instance, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
@@ -372,6 +383,10 @@ class RequestViewSet(viewsets.ModelViewSet):
             }
         )
 
+        # Send notification to the requester about status change
+        if instance.status == 'approved':
+            send_request_notification(instance, 'request_approved')
+
         return Response(RequestDetailSerializer(instance, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
@@ -394,6 +409,9 @@ class RequestViewSet(viewsets.ModelViewSet):
             process_bypass(instance, user, reason)
         except PermissionError as e:
             return Response({'error': str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+        # Send notification to the requester about bypass
+        send_request_notification(instance, 'request_approved')
 
         return Response(RequestDetailSerializer(instance, context={'request': request}).data)
 

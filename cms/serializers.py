@@ -155,6 +155,17 @@ class PageSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        """Override to return full URL for hero_image"""
+        data = super().to_representation(instance)
+        if instance.hero_image:
+            request = self.context.get('request')
+            if request:
+                data['hero_image'] = request.build_absolute_uri(instance.hero_image.url)
+            else:
+                data['hero_image'] = instance.hero_image.url
+        return data
+
 
 class GalleryImageSerializer(serializers.ModelSerializer):
     """Serializer for GalleryImage model"""

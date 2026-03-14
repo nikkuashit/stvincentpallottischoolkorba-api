@@ -16,6 +16,8 @@ django-allauth = "*"
 requests = "*"
 djangorestframework-filters = "*"
 whitenoise = "*"
+pymysql = "*"
+cryptography = "*"
 
 [dev-packages]
 
