@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "communications",  # News, events, announcements
     "workflows",  # Request & approval workflow system
     "notifications",  # Notification system
+    "hr",  # HR & Leave management system
 ]
 
 SITE_ID = 1
@@ -109,15 +110,8 @@ WSGI_APPLICATION = "school_api.wsgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": "palotti_school_korba",
-        "USER": "palotti_school_korba_admin",
-        "PASSWORD": "palotti_school_korba@123",
-        "HOST": "184.168.103.90",
-        "PORT": "3306",
-        "OPTIONS": {
-            "charset": "utf8mb4",
-        },
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -157,8 +151,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = "/static/"
-STATIC_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/staticfiles"
-# STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Additional locations of static files
 STATICFILES_DIRS = [
@@ -173,8 +166,7 @@ STATICFILES_FINDERS = [
 
 # Media files
 MEDIA_URL = "/media/"
-MEDIA_ROOT = "/home/rmoktvux3m8e/public_html/pallottischoolkorba.edu.in/media"
-# MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = BASE_DIR / "media"
 
 
 # Default primary key field type
@@ -199,6 +191,8 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
     ),
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.coreapi.AutoSchema",
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
 }
 
 
@@ -335,3 +329,24 @@ STORAGES = {
 WHITENOISE_AUTOREFRESH = DEBUG
 WHITENOISE_USE_FINDERS = DEBUG
 WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
+
+
+# ==============================================================================
+# SMS NOTIFICATION CONFIGURATION
+# ==============================================================================
+# Configure SMS provider for sending user credentials
+
+# Set to True to enable actual SMS sending (default: False for development)
+SEND_CREDENTIALS_SMS = config("SEND_CREDENTIALS_SMS", default=False, cast=bool)
+
+# SMS Provider: 'console' (dev), 'twilio', 'msg91'
+SMS_PROVIDER = config("SMS_PROVIDER", default="console")
+
+# Twilio Configuration (if using Twilio)
+# TWILIO_ACCOUNT_SID = config("TWILIO_ACCOUNT_SID", default="")
+# TWILIO_AUTH_TOKEN = config("TWILIO_AUTH_TOKEN", default="")
+# TWILIO_PHONE_NUMBER = config("TWILIO_PHONE_NUMBER", default="")
+
+# MSG91 Configuration (if using MSG91)
+# MSG91_AUTH_KEY = config("MSG91_AUTH_KEY", default="")
+# MSG91_SENDER_ID = config("MSG91_SENDER_ID", default="")

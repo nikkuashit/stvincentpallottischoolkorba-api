@@ -75,10 +75,12 @@ urlpatterns = [
     path("notifications/", include("notifications.urls")),
     # Academics API endpoints (Students, Classes, Academic Years)
     path("academics/", include("academics.urls")),
+    # HR API endpoints (Departments, Employees, Leave Management)
+    path("hr/", include("hr.urls")),
 ]
 
-# urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-# urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Serve static and media files
 # In production, whitenoise middleware handles static files

@@ -18,6 +18,8 @@ djangorestframework-filters = "*"
 whitenoise = "*"
 pymysql = "*"
 cryptography = "*"
+python-dateutil = "*"
+openpyxl = "*"
 
 [dev-packages]
 

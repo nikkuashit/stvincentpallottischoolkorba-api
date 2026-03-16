@@ -10,11 +10,14 @@ from rest_framework.permissions import IsAuthenticated, BasePermission
 from django.contrib.auth.models import User
 from django.db.models import Q
 from .models import UserProfile
+from django.http import HttpResponse
 from .serializers import (
     UserSerializer, UserProfileSerializer, UserListSerializer,
     UserCreateSerializer, UserUpdateSerializer, PasswordChangeSerializer,
-    SelfPasswordChangeSerializer, RoleSerializer
+    SelfPasswordChangeSerializer, RoleSerializer, UserCreateResponseSerializer,
+    BulkUserImportSerializer
 )
+from .bulk_import import generate_import_template, parse_excel_file, create_users_from_data
 
 
 class IsAdminOrStaff(BasePermission):
@@ -47,6 +50,7 @@ class UserViewSet(viewsets.ModelViewSet):
     Handles CRUD operations for users with profiles
     """
     permission_classes = [IsAdminOrStaff]
+    pagination_class = None
 
     def get_serializer_class(self):
         """
@@ -90,15 +94,19 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """
-        Create a new user with profile
+        Create a new user with profile.
+
+        If auto_generate_credentials=True, username and password are auto-generated
+        and returned in the response for SMS notification.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         profile = serializer.save()
 
-        # Return the profile data
+        # Use response serializer that includes generated credentials
+        response_serializer = UserCreateResponseSerializer(profile)
         return Response(
-            UserProfileSerializer(profile).data,
+            response_serializer.data,
             status=status.HTTP_201_CREATED
         )
 
@@ -241,6 +249,95 @@ class UserViewSet(viewsets.ModelViewSet):
             'username': request.user.username,
             'must_change_password': False
         })
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """
+        Bulk import users from an Excel file.
+
+        Accepts an Excel file with user data and creates all valid users.
+        Uses database transaction - if any row fails, all are rolled back.
+
+        Request body (multipart/form-data):
+        - file: Excel file (.xlsx)
+        - role: User role (school_staff, parent, student)
+        - send_sms: Boolean, whether to send SMS notifications (default: false)
+        """
+        serializer = BulkUserImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        file = serializer.validated_data['file']
+        role = serializer.validated_data['role']
+        send_sms = serializer.validated_data.get('send_sms', False)
+
+        # Parse Excel file
+        valid_rows, parse_errors = parse_excel_file(file, role)
+
+        if parse_errors:
+            return Response({
+                'success': False,
+                'message': 'Validation errors found in Excel file',
+                'total_rows': len(valid_rows) + len(parse_errors),
+                'valid_rows': len(valid_rows),
+                'error_count': len(parse_errors),
+                'errors': parse_errors,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not valid_rows:
+            return Response({
+                'success': False,
+                'message': 'No valid data rows found in Excel file',
+                'total_rows': 0,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create users
+        created_users, create_errors = create_users_from_data(valid_rows, role, send_sms)
+
+        if create_errors:
+            return Response({
+                'success': False,
+                'message': 'Import failed - all changes rolled back',
+                'total_rows': len(valid_rows),
+                'error_count': len(create_errors),
+                'errors': create_errors,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'success': True,
+            'message': f'Successfully imported {len(created_users)} users',
+            'total_rows': len(valid_rows),
+            'success_count': len(created_users),
+            'created_users': created_users,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='import-template')
+    def import_template(self, request):
+        """
+        Download Excel template for bulk user import.
+
+        Query parameters:
+        - role: User role (school_staff, parent, student)
+
+        Returns an Excel file with proper headers and sample data.
+        """
+        role = request.query_params.get('role', 'school_staff')
+
+        if role not in ['school_staff', 'parent', 'student']:
+            return Response({
+                'error': f"Invalid role: {role}. Must be one of: school_staff, parent, student"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate template
+        excel_content = generate_import_template(role)
+
+        # Create response with Excel file
+        response = HttpResponse(
+            excel_content,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{role}_import_template.xlsx"'
+
+        return response
 
 
 class RoleViewSet(viewsets.ViewSet):

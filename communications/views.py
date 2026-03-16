@@ -20,7 +20,6 @@ class NewsViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'slug', 'summary', 'content']
     ordering_fields = ['published_date', 'created_at', 'title', 'views_count']
     ordering = ['-published_date']
-    lookup_field = 'slug'
 
     def get_queryset(self):
         """Filter news based on query parameters"""
@@ -63,7 +62,6 @@ class EventViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'slug', 'description', 'location']
     ordering_fields = ['start_date', 'end_date', 'created_at', 'title']
     ordering = ['-start_date']
-    lookup_field = 'slug'
 
     def get_queryset(self):
         """Filter events based on query parameters"""

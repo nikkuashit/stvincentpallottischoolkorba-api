@@ -1,7 +1,13 @@
 """Django Admin for Academics App - Simplified without multi-tenancy"""
 
 from django.contrib import admin
-from .models import AcademicYear, Class, Student, Parent, StudentParent, Subject, Course
+from .models import (
+    AcademicYear, Class, Student, Parent, StudentParent, Subject, Course,
+    # Attendance models
+    AttendanceSession, Attendance, AttendanceSettings,
+    # Grades models
+    ExamType, Exam, GradingScale, GradeRange, StudentMark, MarkAuditLog,
+)
 
 
 @admin.register(AcademicYear)
@@ -76,3 +82,94 @@ class CourseAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'academic_year']
     search_fields = ['subject__name', 'class_assigned__name', 'teacher__user__first_name']
     readonly_fields = ['created_at', 'updated_at']
+
+
+# =============================================================================
+# ATTENDANCE ADMIN
+# =============================================================================
+
+@admin.register(AttendanceSession)
+class AttendanceSessionAdmin(admin.ModelAdmin):
+    list_display = ['name', 'code', 'start_time', 'end_time', 'display_order', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name', 'code']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order', 'name']
+
+
+@admin.register(AttendanceSettings)
+class AttendanceSettingsAdmin(admin.ModelAdmin):
+    list_display = ['low_attendance_threshold', 'allow_backdated_entry', 'max_backdated_days', 'notify_parents_on_absent']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(Attendance)
+class AttendanceAdmin(admin.ModelAdmin):
+    list_display = ['student', 'class_assigned', 'date', 'session', 'status', 'marked_by']
+    list_filter = ['status', 'date', 'class_assigned', 'session']
+    search_fields = ['student__first_name', 'student__last_name', 'student__admission_number']
+    readonly_fields = ['created_at', 'updated_at']
+    date_hierarchy = 'date'
+    ordering = ['-date', 'student__roll_number']
+
+
+# =============================================================================
+# GRADES / EXAM ADMIN
+# =============================================================================
+
+@admin.register(ExamType)
+class ExamTypeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'code', 'default_max_marks', 'weightage', 'display_order', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name', 'code']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order', 'name']
+
+
+class GradeRangeInline(admin.TabularInline):
+    model = GradeRange
+    extra = 1
+    fields = ['grade', 'min_percentage', 'max_percentage', 'grade_point', 'description']
+
+
+@admin.register(GradingScale)
+class GradingScaleAdmin(admin.ModelAdmin):
+    list_display = ['name', 'is_default', 'is_active', 'created_at']
+    list_filter = ['is_default', 'is_active']
+    search_fields = ['name', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+    inlines = [GradeRangeInline]
+
+
+@admin.register(GradeRange)
+class GradeRangeAdmin(admin.ModelAdmin):
+    list_display = ['grading_scale', 'grade', 'min_percentage', 'max_percentage', 'grade_point']
+    list_filter = ['grading_scale']
+    search_fields = ['grade', 'description']
+    ordering = ['grading_scale', '-min_percentage']
+
+
+@admin.register(Exam)
+class ExamAdmin(admin.ModelAdmin):
+    list_display = ['name', 'exam_type', 'class_assigned', 'subject', 'academic_year', 'max_marks', 'is_published', 'is_locked']
+    list_filter = ['exam_type', 'academic_year', 'is_published', 'is_locked', 'is_active']
+    search_fields = ['name', 'class_assigned__name', 'subject__name']
+    readonly_fields = ['created_at', 'updated_at']
+    date_hierarchy = 'exam_date'
+
+
+@admin.register(StudentMark)
+class StudentMarkAdmin(admin.ModelAdmin):
+    list_display = ['student', 'exam', 'marks_obtained', 'percentage', 'grade', 'is_absent', 'entered_by']
+    list_filter = ['exam__exam_type', 'is_absent', 'grade']
+    search_fields = ['student__first_name', 'student__last_name', 'exam__name']
+    readonly_fields = ['percentage', 'grade', 'created_at', 'updated_at']
+
+
+@admin.register(MarkAuditLog)
+class MarkAuditLogAdmin(admin.ModelAdmin):
+    list_display = ['student_mark', 'old_marks', 'new_marks', 'old_grade', 'new_grade', 'changed_by', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['student_mark__student__first_name', 'student_mark__student__last_name', 'reason']
+    readonly_fields = ['created_at']
+    ordering = ['-created_at']
