@@ -17,19 +17,23 @@ from django.db import transaction
 from django.http import HttpResponse
 
 from .models import (
-    AcademicYear, Class, Student, Parent, Subject, Course,
+    AcademicYear, Student, Parent, Subject, Course,
     AttendanceSession, Attendance, AttendanceSettings,
     ExamType, Exam, GradingScale, GradeRange, StudentMark, MarkAuditLog,
     # Phase A models
-    SchoolSettings, Grade, Section,
+    GradeType, SchoolSettings, Grade, Section,
     # Phase B models
     StudentEnrollment, StudentPhoto,
     # Phase C models
-    ClassTeacher, SubjectTeacher
+    ClassTeacher, SubjectTeacher,
+    # Room Layout & Seating
+    RoomLayout, Desk, SeatingAssignment,
 )
 from .serializers import (
     AcademicYearSerializer,
-    ClassSerializer,
+    # GradeType serializers
+    GradeTypeSerializer,
+    GradeTypeListSerializer,
     StudentListSerializer,
     StudentDetailSerializer,
     StudentCreateSerializer,
@@ -68,6 +72,11 @@ from .serializers import (
     StudentEnrollmentCreateSerializer,
     StudentPhotoSerializer,
     StudentPhotoUploadSerializer,
+    # Room Layout & Seating serializers
+    RoomLayoutListSerializer,
+    RoomLayoutDetailSerializer,
+    SeatingAssignmentSerializer,
+    SectionSeatingSerializer,
 )
 
 
@@ -81,59 +90,81 @@ class IsAdminOrStaff(BasePermission):
         )
 
 
-class AcademicYearViewSet(viewsets.ModelViewSet):
-    """ViewSet for AcademicYear management"""
-    queryset = AcademicYear.objects.all()
-    serializer_class = AcademicYearSerializer
+class GradeTypeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for GradeType management - admin configurable grade types.
+
+    Endpoints:
+    - GET /grade-types/ - List all grade types
+    - GET /grade-types/?active_only=true - List active grade types only
+    - GET /grade-types/?category=pre_primary - Filter by category
+    - POST /grade-types/ - Create a new grade type
+    - GET /grade-types/{id}/ - Get grade type details
+    - PUT/PATCH /grade-types/{id}/ - Update grade type
+    - DELETE /grade-types/{id}/ - Delete grade type
+    - POST /grade-types/initialize_defaults/ - Initialize with default grade types
+    """
+    queryset = GradeType.objects.all()
     permission_classes = [IsAdminOrStaff]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'short_name', 'description']
+    ordering_fields = ['display_order', 'number', 'name']
+    ordering = ['display_order', 'number']
+
+    def get_serializer_class(self):
+        if self.action == 'list' and self.request.query_params.get('minimal') == 'true':
+            return GradeTypeListSerializer
+        return GradeTypeSerializer
 
     def get_queryset(self):
-        queryset = AcademicYear.objects.all()
-        is_current = self.request.query_params.get('is_current', None)
-        is_active = self.request.query_params.get('is_active', None)
+        queryset = GradeType.objects.all()
 
-        if is_current is not None:
-            queryset = queryset.filter(is_current=is_current.lower() == 'true')
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        # Filter by active status
+        active_only = self.request.query_params.get('active_only', None)
+        if active_only == 'true':
+            queryset = queryset.filter(is_active=True)
 
-        return queryset.order_by('-start_date')
+        # Filter by category
+        category = self.request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(category=category)
+
+        return queryset.order_by('display_order', 'number')
+
+    @action(detail=False, methods=['post'])
+    def initialize_defaults(self, request):
+        """
+        Initialize the database with default grade types.
+        Only creates grade types that don't already exist (by number).
+        """
+        created_count = 0
+        skipped_count = 0
+        default_grade_types = GradeType.get_default_grade_types()
+
+        for grade_type_data in default_grade_types:
+            number = grade_type_data['number']
+            if not GradeType.objects.filter(number=number).exists():
+                GradeType.objects.create(**grade_type_data)
+                created_count += 1
+            else:
+                skipped_count += 1
+
+        return Response({
+            'status': 'success',
+            'created': created_count,
+            'skipped': skipped_count,
+            'message': f'Created {created_count} grade types, skipped {skipped_count} existing ones.'
+        })
 
     @action(detail=False, methods=['get'])
-    def current(self, request):
-        """Get or create the current academic year"""
-        academic_year = get_current_academic_year()
-        serializer = self.get_serializer(academic_year)
-        return Response(serializer.data)
-
-
-class ClassViewSet(viewsets.ModelViewSet):
-    """ViewSet for Class management"""
-    queryset = Class.objects.all()
-    serializer_class = ClassSerializer
-    permission_classes = [IsAdminOrStaff]
-
-    def get_queryset(self):
-        queryset = Class.objects.select_related('class_teacher').all()
-
-        grade = self.request.query_params.get('grade', None)
-        section = self.request.query_params.get('section', None)
-        is_active = self.request.query_params.get('is_active', None)
-        search = self.request.query_params.get('search', None)
-
-        if grade:
-            queryset = queryset.filter(grade=grade)
-        if section:
-            queryset = queryset.filter(section__icontains=section)
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) |
-                Q(section__icontains=search)
-            )
-
-        return queryset.order_by('grade', 'section')
+    def categories(self, request):
+        """Get available category choices for grade types."""
+        return Response({
+            'categories': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in GradeType.CATEGORY_CHOICES
+            ]
+        })
 
 
 class StudentViewSet(viewsets.ModelViewSet):
@@ -151,18 +182,18 @@ class StudentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Student.objects.select_related(
-            'current_class', 'academic_year', 'user_profile', 'user_profile__user'
+            'current_section', 'current_section__grade', 'academic_year', 'user_profile', 'user_profile__user'
         ).all()
 
         # Filters
-        current_class = self.request.query_params.get('current_class', None)
+        current_section = self.request.query_params.get('current_section', None)
         academic_year = self.request.query_params.get('academic_year', None)
         status_filter = self.request.query_params.get('status', None)
         gender = self.request.query_params.get('gender', None)
         search = self.request.query_params.get('search', None)
 
-        if current_class:
-            queryset = queryset.filter(current_class_id=current_class)
+        if current_section:
+            queryset = queryset.filter(current_section_id=current_section)
         if academic_year:
             queryset = queryset.filter(academic_year_id=academic_year)
         if status_filter:
@@ -228,18 +259,77 @@ class StudentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=False, methods=['get'])
-    def by_class(self, request):
-        """Get students grouped by class"""
-        class_id = request.query_params.get('class_id')
-        if not class_id:
+    def by_section(self, request):
+        """Get students grouped by section"""
+        section_id = request.query_params.get('section_id')
+        if not section_id:
             return Response(
-                {'error': 'class_id is required'},
+                {'error': 'section_id is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        students = self.get_queryset().filter(current_class_id=class_id)
+        students = self.get_queryset().filter(current_section_id=section_id)
         serializer = StudentListSerializer(students, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='upload-photo')
+    def upload_photo(self, request, pk=None):
+        """
+        Upload a photo for a student.
+
+        Request body (multipart/form-data):
+        {
+            "image": <file>,
+            "academic_year_id": "<id>"  // Optional: defaults to current academic year
+        }
+
+        The photo will be created with status='pending' and require admin approval.
+        """
+        from .models import StudentPhoto, AcademicYear
+        from .serializers import StudentPhotoUploadSerializer, StudentPhotoSerializer
+
+        student = self.get_object()
+
+        # Get academic year (use current if not provided)
+        academic_year_id = request.data.get('academic_year_id')
+        if not academic_year_id:
+            try:
+                academic_year = AcademicYear.objects.get(is_current=True)
+                academic_year_id = academic_year.id
+            except AcademicYear.DoesNotExist:
+                return Response(
+                    {'error': 'No current academic year found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Prepare data for serializer
+        data = {
+            'student': student.id,
+            'academic_year': academic_year_id,
+            'image': request.data.get('image'),
+        }
+
+        serializer = StudentPhotoUploadSerializer(data=data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        photo = serializer.save()
+
+        response_serializer = StudentPhotoSerializer(photo)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='photos')
+    def get_photos(self, request, pk=None):
+        """Get all photos for a student"""
+        from .models import StudentPhoto
+        from .serializers import StudentPhotoSerializer
+
+        student = self.get_object()
+        photos = StudentPhoto.objects.filter(student=student).order_by('-uploaded_at')
+
+        serializer = StudentPhotoSerializer(photos, many=True, context={'request': request})
+        return Response({
+            'count': photos.count(),
+            'photos': serializer.data
+        })
 
 
 class ParentViewSet(viewsets.ModelViewSet):
@@ -305,7 +395,7 @@ class ParentViewSet(viewsets.ModelViewSet):
                 )
 
         # Get all active students linked to this parent
-        students = parent.students.filter(status='active').select_related('current_class')
+        students = parent.students.filter(status='active').select_related('current_section', 'current_section__grade')
         serializer = StudentListSerializer(students, many=True)
 
         return Response({
@@ -345,17 +435,17 @@ class CourseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Course.objects.select_related(
-            'class_assigned', 'subject', 'teacher', 'academic_year'
+            'section', 'section__grade', 'subject', 'teacher', 'academic_year'
         ).all()
 
-        class_id = self.request.query_params.get('class', None)
+        section_id = self.request.query_params.get('section', None)
         subject_id = self.request.query_params.get('subject', None)
         teacher_id = self.request.query_params.get('teacher', None)
         academic_year = self.request.query_params.get('academic_year', None)
         is_active = self.request.query_params.get('is_active', None)
 
-        if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
         if subject_id:
             queryset = queryset.filter(subject_id=subject_id)
         if teacher_id:
@@ -365,7 +455,7 @@ class CourseViewSet(viewsets.ModelViewSet):
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
-        return queryset.order_by('class_assigned__grade', 'subject__name')
+        return queryset.order_by('section__grade__number', 'subject__name')
 
 
 # =============================================================================
@@ -413,7 +503,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Attendance.objects.select_related(
-            'student', 'class_assigned', 'session', 'academic_year', 'marked_by'
+            'student', 'section', 'session', 'academic_year', 'marked_by'
         ).all()
 
         # Apply filters
@@ -427,7 +517,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         academic_year = self.request.query_params.get('academic_year', None)
 
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
         if date:
             queryset = queryset.filter(date=date)
         if date_from and date_to:
@@ -449,8 +539,8 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
     def get_staff_classes(self, user_profile):
         """Get classes accessible to a staff member"""
-        teacher_classes = Class.objects.filter(class_teacher=user_profile, is_active=True)
-        course_classes = Class.objects.filter(
+        teacher_classes = Section.objects.filter(class_teacher=user_profile, is_active=True)
+        course_classes = Section.objects.filter(
             courses__teacher=user_profile,
             courses__is_active=True
         )
@@ -469,11 +559,11 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         records = data['attendance_records']
 
         try:
-            class_obj = Class.objects.get(id=class_id)
+            section_obj = Section.objects.get(id=class_id)
             academic_year = get_current_academic_year()
             session = AttendanceSession.objects.get(id=session_id) if session_id else None
             marked_by = request.user.profile if hasattr(request.user, 'profile') else None
-        except (Class.DoesNotExist, AttendanceSession.DoesNotExist) as e:
+        except (Section.DoesNotExist, AttendanceSession.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         created_count = 0
@@ -490,7 +580,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     date=date,
                     session=session,
                     defaults={
-                        'class_assigned': class_obj,
+                        'section': section_obj,
                         'academic_year': academic_year,
                         'status': attendance_status,
                         'remarks': remarks,
@@ -522,14 +612,14 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            class_obj = Class.objects.get(id=class_id)
+            section_obj = Section.objects.get(id=class_id)
             academic_year = get_current_academic_year()
             session = AttendanceSession.objects.get(id=session_id) if session_id else None
             marked_by = request.user.profile if hasattr(request.user, 'profile') else None
-        except (Class.DoesNotExist, AttendanceSession.DoesNotExist) as e:
+        except (Section.DoesNotExist, AttendanceSession.DoesNotExist) as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        students = Student.objects.filter(current_class=class_obj, status='active')
+        students = Student.objects.filter(current_section=section_obj, status='active')
         count = 0
 
         with transaction.atomic():
@@ -539,7 +629,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     date=date,
                     session=session,
                     defaults={
-                        'class_assigned': class_obj,
+                        'section': section_obj,
                         'academic_year': academic_year,
                         'status': 'present',
                         'marked_by': marked_by
@@ -566,16 +656,19 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             )
 
         queryset = self.get_queryset().filter(
-            class_assigned_id=class_id,
+            section_id=section_id,
             date=date
         )
         if session_id:
-            queryset = queryset.filter(session_id=session_id)
+            # Include records with the specified session OR records with no session
+            # (for backwards compatibility with data saved before session was required)
+            from django.db.models import Q
+            queryset = queryset.filter(Q(session_id=session_id) | Q(session__isnull=True))
 
-        # Get all students in the class to show unmarked ones
-        class_obj = Class.objects.get(id=class_id)
+        # Get all students in the section to show unmarked ones
+        section_obj = Section.objects.get(id=class_id)
         all_students = Student.objects.filter(
-            current_class=class_obj, status='active'
+            current_section=section_obj, status='active'
         ).order_by('roll_number', 'first_name')
 
         # Create a map of existing attendance
@@ -596,7 +689,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
         return Response({
             'class_id': class_id,
-            'class_name': class_obj.name,
+            'class_name': section_obj.name,
             'date': date,
             'total_students': len(result),
             'marked_count': len([r for r in result if r['status']]),
@@ -611,7 +704,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
         queryset = self.get_queryset().filter(date=date)
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
 
         total = queryset.count()
         status_counts = queryset.values('status').annotate(count=Count('status'))
@@ -644,7 +737,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
         queryset = self.get_queryset().filter(date__range=[start_of_week, end_of_week])
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
 
         # Daily breakdown
         daily_data = []
@@ -701,7 +794,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
         queryset = self.get_queryset().filter(date__range=[start_date, end_date])
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
 
         # Calculate working days (exclude weekends - Saturday, Sunday)
         working_days = 0
@@ -749,7 +842,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset().filter(date__range=[date_from, date_to])
 
         # Group by class
-        class_stats = queryset.values('class_assigned__id', 'class_assigned__name').annotate(
+        class_stats = queryset.values('section__id', 'section__name').annotate(
             total=Count('id'),
             present=Count('id', filter=Q(status='present')),
             absent=Count('id', filter=Q(status='absent')),
@@ -764,8 +857,8 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             percentage = (present_and_late / total * 100) if total > 0 else 0
 
             result.append({
-                'class_id': str(stats['class_assigned__id']),
-                'class_name': stats['class_assigned__name'],
+                'class_id': str(stats['section__id']),
+                'class_name': stats['section__name'],
                 'total_records': total,
                 'present': stats['present'],
                 'absent': stats['absent'],
@@ -842,7 +935,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             'student_id': str(student.id),
             'student_name': f"{student.first_name} {student.last_name}",
             'roll_number': student.roll_number,
-            'class_name': student.current_class.name if student.current_class else '',
+            'section_name': student.current_section.full_name if student.current_section else '',
             'period': {
                 'from': date_from or 'all',
                 'to': date_to or 'all'
@@ -882,7 +975,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         # Get all students
         students_queryset = Student.objects.filter(status='active')
         if class_id:
-            students_queryset = students_queryset.filter(current_class_id=class_id)
+            students_queryset = students_queryset.filter(current_section_id=class_id)
 
         low_attendance_students = []
         for student in students_queryset:
@@ -903,7 +996,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     'student_id': str(student.id),
                     'student_name': f"{student.first_name} {student.last_name}",
                     'roll_number': student.roll_number,
-                    'class_name': student.current_class.name if student.current_class else '',
+                    'section_name': student.current_section.full_name if student.current_section else '',
                     'attendance_percentage': round(percentage, 2),
                     'absent_days': absent,
                     'total_days': total,
@@ -931,7 +1024,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
         queryset = self.get_queryset()
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
         if date_from and date_to:
             queryset = queryset.filter(date__range=[date_from, date_to])
         if student_id:
@@ -949,7 +1042,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
                     attendance.date.isoformat(),
                     f"{attendance.student.first_name} {attendance.student.last_name}",
                     attendance.student.roll_number,
-                    attendance.class_assigned.name,
+                    attendance.section.name,
                     attendance.session.name if attendance.session else '',
                     attendance.status,
                     attendance.remarks,
@@ -1023,7 +1116,7 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Exam.objects.select_related(
-            'exam_type', 'academic_year', 'class_assigned', 'subject'
+            'exam_type', 'academic_year', 'section', 'subject'
         ).all()
 
         # Apply filters
@@ -1041,7 +1134,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         if academic_year:
             queryset = queryset.filter(academic_year_id=academic_year)
         if class_id:
-            queryset = queryset.filter(class_assigned_id=class_id)
+            queryset = queryset.filter(section_id=section_id)
         if subject:
             queryset = queryset.filter(subject_id=subject)
         if is_published is not None:
@@ -1053,7 +1146,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         if teacher:
             # Filter by teacher's courses
             queryset = queryset.filter(
-                class_assigned__courses__teacher_id=teacher,
+                section__courses__teacher_id=teacher,
                 subject__courses__teacher_id=teacher
             ).distinct()
 
@@ -1105,7 +1198,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         courses = Course.objects.filter(teacher_id=teacher_id, is_active=True)
 
         # Get class-subject pairs from courses
-        class_subject_pairs = [(c.class_assigned_id, c.subject_id) for c in courses]
+        class_subject_pairs = [(c.section_id, c.subject_id) for c in courses]
 
         if not class_subject_pairs:
             return Response([])
@@ -1113,7 +1206,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         # Build query for matching exams
         query = Q()
         for class_id, subject_id in class_subject_pairs:
-            query |= Q(class_assigned_id=class_id, subject_id=subject_id)
+            query |= Q(section_id=section_id, subject_id=subject_id)
 
         exams = self.get_queryset().filter(query)
         serializer = ExamListSerializer(exams, many=True)
@@ -1131,7 +1224,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = StudentMark.objects.select_related(
-            'exam', 'exam__exam_type', 'exam__class_assigned', 'exam__subject',
+            'exam', 'exam__exam_type', 'exam__section', 'exam__subject',
             'student', 'entered_by'
         ).all()
 
@@ -1144,7 +1237,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         if student:
             queryset = queryset.filter(student_id=student)
         if class_id:
-            queryset = queryset.filter(exam__class_assigned_id=class_id)
+            queryset = queryset.filter(exam__section_id=section_id)
 
         return queryset.order_by('student__roll_number')
 
@@ -1212,9 +1305,9 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         except Exam.DoesNotExist:
             return Response({'error': 'Exam not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Get all students in the class
+        # Get all students in the section
         students = Student.objects.filter(
-            current_class=exam.class_assigned, status='active'
+            current_section=exam.section, status='active'
         ).order_by('roll_number', 'first_name')
 
         # Get existing marks
@@ -1250,7 +1343,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         return Response({
             'exam_id': str(exam.id),
             'exam_name': exam.name,
-            'class_name': exam.class_assigned.name,
+            'section_name': exam.section.full_name,
             'subject_name': exam.subject.name,
             'max_marks': float(exam.max_marks),
             'passing_marks': float(exam.passing_marks) if exam.passing_marks else None,
@@ -1270,7 +1363,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
             return Response({'error': 'class_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Get exams for the class
-        exams = Exam.objects.filter(class_assigned_id=class_id, is_active=True)
+        exams = Exam.objects.filter(section_id=section_id, is_active=True)
         if academic_year:
             exams = exams.filter(academic_year_id=academic_year)
         if subject:
@@ -1316,14 +1409,14 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         ]
 
         try:
-            class_obj = Class.objects.get(id=class_id)
-            class_name = class_obj.name
-        except Class.DoesNotExist:
-            class_name = ''
+            section_obj = Section.objects.get(id=class_id)
+            section_name = section_obj.full_name
+        except Section.DoesNotExist:
+            section_name = ''
 
         return Response({
-            'class_id': class_id,
-            'class_name': class_name,
+            'section_id': class_id,
+            'section_name': section_name,
             'total_students': marks.values('student').distinct().count(),
             'students_appeared': stats['total'],
             'average': round(stats['average'] or 0, 2),
@@ -1343,7 +1436,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         if not class_id:
             return Response({'error': 'class_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        exams = Exam.objects.filter(class_assigned_id=class_id, is_active=True)
+        exams = Exam.objects.filter(section_id=section_id, is_active=True)
         if academic_year:
             exams = exams.filter(academic_year_id=academic_year)
         if exam_type:
@@ -1424,7 +1517,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         return Response({
             'student_id': str(student.id),
             'student_name': f"{student.first_name} {student.last_name}",
-            'class_name': student.current_class.name if student.current_class else '',
+            'section_name': student.current_section.full_name if student.current_section else '',
             'exams': exams_data
         })
 
@@ -1440,7 +1533,7 @@ class StudentMarkViewSet(viewsets.ModelViewSet):
         if exam_id:
             marks = marks.filter(exam_id=exam_id)
         elif class_id:
-            marks = marks.filter(exam__class_assigned_id=class_id)
+            marks = marks.filter(exam__section_id=section_id)
             if academic_year:
                 marks = marks.filter(exam__academic_year_id=academic_year)
 
@@ -1520,7 +1613,7 @@ class StudentAdmissionViewSet(viewsets.ViewSet):
             "gender": "male",
             "admission_number": "2024001",
             "admission_date": "2024-04-01",
-            "current_class": "<class-uuid>",
+            "current_section": "<section-uuid>",
             "academic_year": "<academic-year-uuid>",  // optional
             "roll_number": "01",  // optional
             "address_line1": "123 Main St",
@@ -1603,7 +1696,6 @@ class SchoolSettingsViewSet(viewsets.ViewSet):
             pk=1,  # Singleton pattern with fixed primary key
             defaults={
                 'admission_number_prefix': 'SVP',
-                'default_section_capacity': 65,
             }
         )
 
@@ -1690,6 +1782,13 @@ class AcademicYearViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsAdminOrStaff()]
         return [IsAuthenticated()]
+
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        """Get or create the current academic year"""
+        academic_year = get_current_academic_year()
+        serializer = self.get_serializer_class()(academic_year)
+        return Response(serializer.data)
 
     @action(detail=True, methods=['post'], url_path='set-current')
     def set_current(self, request, pk=None):
@@ -1845,7 +1944,7 @@ class GradeViewSet(viewsets.ModelViewSet):
                     Section.objects.create(
                         grade=new_grade,
                         name=section.name,
-                        capacity=section.capacity,
+                        room_layout=section.room_layout,
                         academic_year=target_academic_year
                         # Note: class_teacher is not cloned, must be assigned manually
                     )
@@ -1879,7 +1978,7 @@ class SectionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'grade__name']
-    ordering_fields = ['name', 'capacity', 'grade__number']
+    ordering_fields = ['name', 'grade__number']
 
     def get_queryset(self):
         """
@@ -1982,6 +2081,57 @@ class SectionViewSet(viewsets.ModelViewSet):
             'message': message,
             'section': serializer.data
         })
+
+    @action(detail=True, methods=['get'], url_path='seating')
+    def seating(self, request, pk=None):
+        """
+        Get section seating data: section info, room layout with desks,
+        seating assignments, and unassigned students.
+        """
+        section = self.get_object()
+
+        if not section.room_layout:
+            from .serializers import SectionSerializer
+            return Response({
+                'section': SectionSerializer(section).data,
+                'room_layout': None,
+                'seating_assignments': [],
+                'unassigned_students': [],
+            })
+
+        room_layout = section.room_layout
+        assignments = SeatingAssignment.objects.filter(
+            section=section
+        ).select_related('student', 'desk').prefetch_related('student__photos').order_by('desk__row', 'desk__column', 'position')
+
+        assigned_student_ids = set(assignments.values_list('student_id', flat=True))
+        unassigned = section.students.filter(
+            status='active'
+        ).exclude(id__in=assigned_student_ids).prefetch_related('photos').order_by('roll_number')
+
+        def get_student_photo_url(student):
+            photo = student.photos.filter(is_current=True, status='approved').first()
+            if photo and photo.image:
+                return request.build_absolute_uri(photo.image.url)
+            return None
+
+        unassigned_data = [{
+            'id': str(s.id),
+            'first_name': s.first_name,
+            'last_name': s.last_name,
+            'roll_number': s.roll_number,
+            'admission_number': s.admission_number,
+            'photo_url': get_student_photo_url(s),
+        } for s in unassigned]
+
+        from .serializers import SectionSerializer
+        return Response({
+            'section': SectionSerializer(section).data,
+            'room_layout': RoomLayoutDetailSerializer(room_layout).data,
+            'seating_assignments': SeatingAssignmentSerializer(assignments, many=True, context={'request': request}).data,
+            'unassigned_students': unassigned_data,
+        })
+
 # This file contains Phase B ViewSets to be merged into views.py
 # Append this content to the end of academics/views.py
 
@@ -3152,4 +3302,469 @@ class SubjectTeacherViewSet(viewsets.ModelViewSet):
             'assignment_id': str(assignment.id),
             'is_active': assignment.is_active,
             'message': f'Assignment {status_message} successfully'
+        })
+
+
+# =============================================================================
+# ROOM LAYOUT & SEATING ARRANGEMENT VIEWSETS
+# =============================================================================
+
+class RoomLayoutViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing room layout templates.
+
+    Provides CRUD operations plus:
+    - duplicate: Clone an existing layout
+
+    Room layouts are reusable templates not tied to specific sections.
+    """
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'rows', 'columns', 'created_at']
+
+    def get_queryset(self):
+        queryset = RoomLayout.objects.all()
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
+        return queryset.order_by('name')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return RoomLayoutListSerializer
+        return RoomLayoutDetailSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'duplicate']:
+            return [IsAdminOrStaff()]
+        return [IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        """Prevent deletion if layout is assigned to any section."""
+        instance = self.get_object()
+        if instance.sections.exists():
+            section_names = ", ".join(
+                str(s) for s in instance.sections.all()[:5]
+            )
+            return Response(
+                {'error': f'Cannot delete layout. It is used by sections: {section_names}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=['post'], url_path='duplicate')
+    def duplicate(self, request, pk=None):
+        """
+        Clone an existing room layout with all its desks.
+
+        Returns the new layout.
+        """
+        original = self.get_object()
+        new_name = request.data.get('name', f"{original.name} (Copy)")
+
+        with transaction.atomic():
+            new_layout = RoomLayout.objects.create(
+                name=new_name,
+                rows=original.rows,
+                columns=original.columns,
+                description=original.description,
+                is_active=True,
+            )
+            desks = []
+            for desk in original.desks.all():
+                desks.append(Desk(
+                    room_layout=new_layout,
+                    row=desk.row,
+                    column=desk.column,
+                    capacity=desk.capacity,
+                    is_active=desk.is_active,
+                    label=desk.label,
+                ))
+            Desk.objects.bulk_create(desks)
+
+        serializer = RoomLayoutDetailSerializer(new_layout)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class SeatingAssignmentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing seating assignments.
+
+    Custom actions:
+    - auto-assign: Auto-assign students to desks by roll number order
+    - swap: Swap two students' seats
+    - clear: Remove all seating assignments for a section
+    """
+    serializer_class = SeatingAssignmentSerializer
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['desk__row', 'desk__column', 'position']
+
+    def get_queryset(self):
+        queryset = SeatingAssignment.objects.select_related(
+            'student', 'desk', 'section'
+        ).all()
+
+        section_id = self.request.query_params.get('section')
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+
+        return queryset.order_by('desk__row', 'desk__column', 'position')
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy',
+                           'auto_assign', 'swap', 'clear', 'assign', 'unassign',
+                           'move']:
+            return [IsAdminOrStaff()]
+        return [IsAuthenticated()]
+
+    @action(detail=False, methods=['post'], url_path='auto-assign')
+    def auto_assign(self, request):
+        """
+        Auto-assign students to desks by roll number order.
+
+        Request body: { "section_id": "<uuid>" }
+
+        Algorithm:
+        1. Get section, validate it has a room_layout
+        2. Get active desks ordered by (row, column)
+        3. Get active students ordered by roll_number
+        4. Delete existing assignments
+        5. Walk desks filling positions 1..capacity with next student
+        6. Return assignments + unassigned students (overflow)
+        """
+        section_id = request.data.get('section_id')
+        if not section_id:
+            return Response(
+                {'error': 'section_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            section = Section.objects.get(id=section_id)
+        except Section.DoesNotExist:
+            return Response(
+                {'error': 'Section not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if not section.room_layout:
+            return Response(
+                {'error': 'Section does not have a room layout assigned'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        desks = section.room_layout.desks.filter(
+            is_active=True
+        ).order_by('row', 'column')
+
+        # Sort students by roll_number (numeric sort where possible)
+        students = list(section.students.filter(status='active'))
+        students.sort(key=lambda s: (
+            int(s.roll_number) if s.roll_number and s.roll_number.isdigit() else 999999,
+            s.roll_number or '',
+            s.last_name,
+        ))
+
+        with transaction.atomic():
+            # Clear existing assignments
+            SeatingAssignment.objects.filter(section=section).delete()
+
+            assignments = []
+            student_iter = iter(students)
+            assigned_count = 0
+
+            for desk in desks:
+                for pos in range(1, desk.capacity + 1):
+                    try:
+                        student = next(student_iter)
+                        assignments.append(SeatingAssignment(
+                            section=section,
+                            desk=desk,
+                            student=student,
+                            position=pos,
+                        ))
+                        assigned_count += 1
+                    except StopIteration:
+                        break
+
+            SeatingAssignment.objects.bulk_create(assignments)
+
+        # Get remaining unassigned
+        assigned_ids = {a.student_id for a in assignments}
+        unassigned = [s for s in students if s.id not in assigned_ids]
+
+        def get_student_photo_url(student):
+            photo = student.photos.filter(is_current=True, status='approved').first()
+            if photo and photo.image:
+                return request.build_absolute_uri(photo.image.url)
+            return None
+
+        return Response({
+            'message': f'Auto-assigned {assigned_count} students to desks',
+            'assigned_count': assigned_count,
+            'unassigned_count': len(unassigned),
+            'assignments': SeatingAssignmentSerializer(
+                SeatingAssignment.objects.filter(section=section).select_related('student', 'desk'),
+                many=True,
+                context={'request': request}
+            ).data,
+            'unassigned_students': [{
+                'id': str(s.id),
+                'first_name': s.first_name,
+                'last_name': s.last_name,
+                'roll_number': s.roll_number,
+                'photo_url': get_student_photo_url(s),
+            } for s in unassigned],
+        })
+
+    @action(detail=False, methods=['post'], url_path='swap')
+    def swap(self, request):
+        """
+        Swap two students' seating assignments.
+
+        Request body: { "assignment_id_1": "<uuid>", "assignment_id_2": "<uuid>" }
+        """
+        id1 = request.data.get('assignment_id_1')
+        id2 = request.data.get('assignment_id_2')
+
+        if not id1 or not id2:
+            return Response(
+                {'error': 'Both assignment_id_1 and assignment_id_2 are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            a1 = SeatingAssignment.objects.get(id=id1)
+            a2 = SeatingAssignment.objects.get(id=id2)
+        except SeatingAssignment.DoesNotExist:
+            return Response(
+                {'error': 'One or both assignments not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if a1.section_id != a2.section_id:
+            return Response(
+                {'error': 'Both assignments must belong to the same section'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            # Swap students using delete+recreate to avoid unique constraint
+            # issues with sequential saves (section+student uniqueness)
+            student1 = a1.student
+            student2 = a2.student
+            desk1, pos1 = a1.desk, a1.position
+            desk2, pos2 = a2.desk, a2.position
+
+            # Delete both then recreate with swapped students
+            a1_id, a2_id = a1.id, a2.id
+            SeatingAssignment.objects.filter(id__in=[a1_id, a2_id]).delete()
+
+            a1 = SeatingAssignment.objects.create(
+                id=a1_id, section=a1.section, desk=desk1,
+                student=student2, position=pos1,
+            )
+            a2 = SeatingAssignment.objects.create(
+                id=a2_id, section=a2.section, desk=desk2,
+                student=student1, position=pos2,
+            )
+
+        return Response({
+            'message': 'Seats swapped successfully',
+            'assignment_1': SeatingAssignmentSerializer(a1, context={'request': request}).data,
+            'assignment_2': SeatingAssignmentSerializer(a2, context={'request': request}).data,
+        })
+
+    @action(detail=False, methods=['post'], url_path='clear')
+    def clear(self, request):
+        """
+        Clear all seating assignments for a section.
+
+        Request body: { "section_id": "<uuid>" }
+        """
+        section_id = request.data.get('section_id')
+        if not section_id:
+            return Response(
+                {'error': 'section_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            section = Section.objects.get(id=section_id)
+        except Section.DoesNotExist:
+            return Response(
+                {'error': 'Section not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        count, _ = SeatingAssignment.objects.filter(section=section).delete()
+
+        return Response({
+            'message': f'Cleared {count} seating assignments',
+            'count': count,
+        })
+
+    @action(detail=False, methods=['post'], url_path='assign')
+    def assign(self, request):
+        """
+        Assign a single student to a specific desk and position.
+
+        Request body: {
+            "section_id": "<uuid>",
+            "student_id": "<uuid>",
+            "desk_id": "<uuid>",
+            "position": 1  (1-based)
+        }
+        """
+        section_id = request.data.get('section_id')
+        student_id = request.data.get('student_id')
+        desk_id = request.data.get('desk_id')
+        position = request.data.get('position')
+
+        if not all([section_id, student_id, desk_id, position]):
+            return Response(
+                {'error': 'section_id, student_id, desk_id, and position are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            section = Section.objects.get(id=section_id)
+        except Section.DoesNotExist:
+            return Response({'error': 'Section not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            desk = Desk.objects.get(id=desk_id)
+        except Desk.DoesNotExist:
+            return Response({'error': 'Desk not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not desk.is_active:
+            return Response({'error': 'Cannot assign to an inactive desk (aisle)'}, status=status.HTTP_400_BAD_REQUEST)
+
+        position = int(position)
+        if position < 1 or position > desk.capacity:
+            return Response(
+                {'error': f'Position must be between 1 and {desk.capacity}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if position is already occupied
+        existing = SeatingAssignment.objects.filter(
+            section=section, desk=desk, position=position
+        ).first()
+        if existing:
+            return Response(
+                {'error': f'Position {position} at this desk is already occupied'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if student already has a seat in this section
+        existing_student = SeatingAssignment.objects.filter(
+            section=section, student_id=student_id
+        ).first()
+        if existing_student:
+            return Response(
+                {'error': 'Student already has a seat assignment in this section'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        assignment = SeatingAssignment.objects.create(
+            section=section,
+            desk=desk,
+            student_id=student_id,
+            position=position,
+        )
+
+        return Response({
+            'message': 'Student assigned to seat',
+            'assignment': SeatingAssignmentSerializer(assignment, context={'request': request}).data,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='unassign')
+    def unassign(self, request):
+        """
+        Remove a single student's seating assignment.
+
+        Request body: { "assignment_id": "<uuid>" }
+        """
+        assignment_id = request.data.get('assignment_id')
+        if not assignment_id:
+            return Response(
+                {'error': 'assignment_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            assignment = SeatingAssignment.objects.get(id=assignment_id)
+        except SeatingAssignment.DoesNotExist:
+            return Response(
+                {'error': 'Assignment not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        student_name = f'{assignment.student.first_name} {assignment.student.last_name}'
+        assignment.delete()
+
+        return Response({
+            'message': f'{student_name} has been unassigned',
+        })
+
+    @action(detail=False, methods=['post'], url_path='move')
+    def move(self, request):
+        """
+        Move a student to a different desk/position (removes old, creates new).
+
+        Request body: {
+            "assignment_id": "<uuid>",
+            "desk_id": "<uuid>",
+            "position": 1
+        }
+        """
+        assignment_id = request.data.get('assignment_id')
+        desk_id = request.data.get('desk_id')
+        position = request.data.get('position')
+
+        if not all([assignment_id, desk_id, position]):
+            return Response(
+                {'error': 'assignment_id, desk_id, and position are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            assignment = SeatingAssignment.objects.get(id=assignment_id)
+        except SeatingAssignment.DoesNotExist:
+            return Response({'error': 'Assignment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            desk = Desk.objects.get(id=desk_id)
+        except Desk.DoesNotExist:
+            return Response({'error': 'Desk not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not desk.is_active:
+            return Response({'error': 'Cannot move to an inactive desk'}, status=status.HTTP_400_BAD_REQUEST)
+
+        position = int(position)
+        if position < 1 or position > desk.capacity:
+            return Response(
+                {'error': f'Position must be between 1 and {desk.capacity}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if target position is already occupied (but not by the same student)
+        existing = SeatingAssignment.objects.filter(
+            section=assignment.section, desk=desk, position=position
+        ).exclude(id=assignment.id).first()
+        if existing:
+            return Response(
+                {'error': f'Position {position} at this desk is already occupied'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            assignment.desk = desk
+            assignment.position = position
+            assignment.save(update_fields=['desk', 'position', 'updated_at'])
+
+        return Response({
+            'message': 'Student moved successfully',
+            'assignment': SeatingAssignmentSerializer(assignment, context={'request': request}).data,
         })

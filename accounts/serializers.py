@@ -157,6 +157,9 @@ class UserCreateSerializer(serializers.Serializer):
     admission_no = serializers.CharField(max_length=50, required=False, allow_blank=True)
     roll_no = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
+    # Supervisor/Reporting structure (for staff users)
+    reports_to = serializers.UUIDField(required=False, allow_null=True)
+
     # Auto-generation control
     auto_generate_credentials = serializers.BooleanField(default=False)
 
@@ -252,6 +255,21 @@ class UserCreateSerializer(serializers.Serializer):
             roll_no=validated_data.get('roll_no', ''),
             must_change_password=auto_generate,  # Force password change for auto-generated
         )
+
+        # Set supervisor for staff users (EmployeeProfile is auto-created by signal)
+        reports_to_id = validated_data.get('reports_to')
+        if is_staff and reports_to_id:
+            from hr.models import EmployeeProfile
+            try:
+                # Wait for signal to create EmployeeProfile, then update supervisor
+                employee_profile = EmployeeProfile.objects.filter(user=user).first()
+                if employee_profile:
+                    supervisor = EmployeeProfile.objects.filter(id=reports_to_id).first()
+                    if supervisor:
+                        employee_profile.reports_to = supervisor
+                        employee_profile.save(update_fields=['reports_to'])
+            except Exception:
+                pass  # Silently fail if supervisor assignment fails
 
         # Attach generated credentials to profile for serialization
         if generated_credentials:

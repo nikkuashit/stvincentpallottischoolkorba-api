@@ -66,7 +66,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Return all user profiles with filtering support
+        Return all user profiles with filtering support.
+        By default, excludes students since they are managed via /academics/students/
         """
         queryset = UserProfile.objects.select_related('user').all()
 
@@ -74,9 +75,14 @@ class UserViewSet(viewsets.ModelViewSet):
         role = self.request.query_params.get('role', None)
         is_active = self.request.query_params.get('is_active', None)
         search = self.request.query_params.get('search', None)
+        include_students = self.request.query_params.get('include_students', None)
 
         if role:
             queryset = queryset.filter(role=role)
+        elif include_students is None or include_students.lower() not in ['true', '1', 'yes']:
+            # By default, exclude students from the users list
+            # Students are managed separately via /academics/students/
+            queryset = queryset.exclude(role='student')
         if is_active is not None:
             is_active_bool = is_active.lower() in ['true', '1', 'yes']
             queryset = queryset.filter(user__is_active=is_active_bool)

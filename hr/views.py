@@ -28,6 +28,7 @@ from .models import (
     LeaveApproval,
     LeaveBalanceAuditLog,
     Holiday,
+    StaffAttendance,
 )
 from .serializers import (
     DepartmentSerializer,
@@ -47,7 +48,47 @@ from .serializers import (
     LeaveApprovalActionSerializer,
     LeaveBalanceAuditLogSerializer,
     HolidaySerializer,
+    StaffAttendanceSerializer,
+    StaffAttendanceCheckInSerializer,
+    StaffAttendanceCheckOutSerializer,
+    StaffAttendanceSummarySerializer,
 )
+import base64
+import re
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def decode_base64_photo(photo_data: str) -> bytes:
+    """
+    Decode base64 photo data, handling data URI format.
+    Accepts either raw base64 or data URI (e.g., "data:image/jpeg;base64,...")
+    """
+    # Strip data URI prefix if present
+    if photo_data.startswith('data:'):
+        # Handle format: data:image/jpeg;base64,<base64_data>
+        match = re.match(r'data:[^;]+;base64,(.+)', photo_data, re.DOTALL)
+        if match:
+            photo_data = match.group(1)
+
+    # Remove any whitespace, newlines, or other non-base64 characters
+    # Keep only valid base64 characters: A-Z, a-z, 0-9, +, /, =
+    photo_data = re.sub(r'[^A-Za-z0-9+/=]', '', photo_data)
+
+    # Fix padding - base64 must be multiple of 4
+    # If length % 4 == 1, it's invalid - trim the last character
+    remainder = len(photo_data) % 4
+    if remainder == 1:
+        # Invalid length - trim last char (likely corruption)
+        photo_data = photo_data[:-1]
+    elif remainder == 2:
+        photo_data += '=='
+    elif remainder == 3:
+        photo_data += '='
+
+    return base64.b64decode(photo_data)
 
 
 # =============================================================================
@@ -281,6 +322,19 @@ class LeaveTypeViewSet(viewsets.ModelViewSet):
         if is_active.lower() == 'true':
             queryset = queryset.filter(is_active=True)
 
+        # Filter by applyable - by default only show applyable leave types for non-admin
+        # Admin can use ?is_applyable=all to see all leave types
+        is_applyable = self.request.query_params.get('is_applyable', None)
+        if is_applyable == 'all':
+            # Admin wants to see all leave types (for calendar management)
+            pass
+        elif is_applyable == 'false':
+            # Only calendar-only leave types
+            queryset = queryset.filter(is_applyable=False)
+        else:
+            # Default: only show applyable leave types for staff applying leaves
+            queryset = queryset.filter(is_applyable=True)
+
         # Filter by gender if user has employee profile
         if hasattr(self.request.user, 'profile'):
             gender = self.request.user.profile.gender
@@ -393,15 +447,25 @@ class LeaveBalanceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def my_balances(self, request):
-        """Get current user's leave balances."""
+        """Get current user's leave balances. Auto-initializes from policies if none exist."""
         try:
             employee = request.user.employee_profile
             year = int(request.query_params.get('year', date.today().year))
 
+            # Check if balances exist for this employee and year
             balances = LeaveBalance.objects.filter(
                 employee=employee,
                 year=year
             ).select_related('leave_type')
+
+            # If no balances exist, auto-initialize from applicable policies
+            if not balances.exists():
+                self._initialize_employee_balances(employee, year, request.user)
+                # Re-fetch after initialization
+                balances = LeaveBalance.objects.filter(
+                    employee=employee,
+                    year=year
+                ).select_related('leave_type')
 
             serializer = LeaveBalanceSerializer(balances, many=True)
             return Response(serializer.data)
@@ -411,17 +475,82 @@ class LeaveBalanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+    def _initialize_employee_balances(self, employee, year, user):
+        """Initialize leave balances for a single employee based on applicable policies."""
+        today = date.today()
+
+        # Get current active leave policies
+        policies = LeavePolicy.objects.filter(
+            is_active=True,
+            effective_from__lte=today
+        ).filter(
+            Q(effective_to__isnull=True) | Q(effective_to__gte=today)
+        ).select_related('leave_type')
+
+        for policy in policies:
+            # Check if policy applies to this employee
+            if not policy.is_applicable_to(employee):
+                continue
+
+            # Check if balance already exists
+            if LeaveBalance.objects.filter(
+                employee=employee,
+                leave_type=policy.leave_type,
+                year=year
+            ).exists():
+                continue
+
+            # Calculate accrued quota based on accrual_type (yearly/monthly/quarterly)
+            # This respects the credit policy set by admin
+            annual_quota = policy.calculate_accrued_quota(employee.joining_date, year)
+
+            # Get carryforward from previous year
+            opening_balance = Decimal('0')
+            if policy.carryforward_type != 'none':
+                try:
+                    prev_balance = LeaveBalance.objects.get(
+                        employee=employee,
+                        leave_type=policy.leave_type,
+                        year=year - 1
+                    )
+                    carryforward = prev_balance.available_balance
+                    if policy.carryforward_type == 'partial' and policy.max_carryforward_days:
+                        carryforward = min(carryforward, policy.max_carryforward_days)
+                    opening_balance = max(Decimal('0'), carryforward)
+                except LeaveBalance.DoesNotExist:
+                    pass
+
+            # Create balance
+            LeaveBalance.objects.create(
+                employee=employee,
+                leave_type=policy.leave_type,
+                year=year,
+                opening_balance=opening_balance,
+                annual_quota=annual_quota,
+                last_updated_by=user
+            )
+
     @action(detail=False, methods=['get'])
     def my_summary(self, request):
-        """Get current user's leave balance summary."""
+        """Get current user's leave balance summary. Auto-initializes from policies if none exist."""
         try:
             employee = request.user.employee_profile
             year = int(request.query_params.get('year', date.today().year))
 
+            # Check if balances exist for this employee and year
             balances = LeaveBalance.objects.filter(
                 employee=employee,
                 year=year
             ).select_related('leave_type')
+
+            # If no balances exist, auto-initialize from applicable policies
+            if not balances.exists():
+                self._initialize_employee_balances(employee, year, request.user)
+                # Re-fetch after initialization
+                balances = LeaveBalance.objects.filter(
+                    employee=employee,
+                    year=year
+                ).select_related('leave_type')
 
             total_available = sum(b.available_balance for b in balances)
             total_used = sum(b.used for b in balances)
@@ -911,3 +1040,327 @@ class HolidayViewSet(viewsets.ModelViewSet):
             result[year] = HolidaySerializer(holidays, many=True).data
 
         return Response(result)
+
+
+# =============================================================================
+# STAFF ATTENDANCE VIEWSET
+# =============================================================================
+
+import base64
+from django.core.files.base import ContentFile
+
+class StaffAttendanceViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for staff attendance with geo-selfie check-in/check-out.
+
+    Endpoints:
+    - GET /api/hr/staff-attendance/ - List attendance (admin sees all, staff sees own)
+    - GET /api/hr/staff-attendance/my_attendance/ - Current user's attendance records
+    - GET /api/hr/staff-attendance/today/ - Today's attendance record
+    - POST /api/hr/staff-attendance/check_in/ - Check in with photo and location
+    - POST /api/hr/staff-attendance/check_out/ - Check out with photo and location
+    - GET /api/hr/staff-attendance/summary/ - Attendance summary for a period
+    """
+    queryset = StaffAttendance.objects.select_related('employee__user', 'employee__department')
+    serializer_class = StaffAttendanceSerializer
+    filter_backends = [filters.OrderingFilter]
+    ordering = ['-date', '-check_in_time']
+
+    def get_permissions(self):
+        # All authenticated users can access their own attendance
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        # Admin sees all, staff sees only their own
+        if not user.is_staff:
+            try:
+                employee = user.employee_profile
+                queryset = queryset.filter(employee=employee)
+            except EmployeeProfile.DoesNotExist:
+                queryset = queryset.none()
+
+        # Filter by date range
+        start_date = self.request.query_params.get('start_date')
+        if start_date:
+            queryset = queryset.filter(date__gte=start_date)
+
+        end_date = self.request.query_params.get('end_date')
+        if end_date:
+            queryset = queryset.filter(date__lte=end_date)
+
+        # Filter by employee (admin only)
+        employee_id = self.request.query_params.get('employee')
+        if employee_id and user.is_staff:
+            queryset = queryset.filter(employee_id=employee_id)
+
+        # Filter by status
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def my_attendance(self, request):
+        """Get current user's attendance records."""
+        try:
+            employee = request.user.employee_profile
+            queryset = StaffAttendance.objects.filter(employee=employee)
+
+            # Filter by date range
+            start_date = request.query_params.get('start_date')
+            if start_date:
+                queryset = queryset.filter(date__gte=start_date)
+
+            end_date = request.query_params.get('end_date')
+            if end_date:
+                queryset = queryset.filter(date__lte=end_date)
+
+            # Default to current month
+            if not start_date and not end_date:
+                today = date.today()
+                queryset = queryset.filter(
+                    date__year=today.year,
+                    date__month=today.month
+                )
+
+            queryset = queryset.order_by('-date')
+            serializer = StaffAttendanceSerializer(queryset, many=True)
+            return Response(serializer.data)
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        """Get today's attendance record for current user."""
+        try:
+            employee = request.user.employee_profile
+            today = date.today()
+
+            try:
+                attendance = StaffAttendance.objects.get(
+                    employee=employee,
+                    date=today
+                )
+                serializer = StaffAttendanceSerializer(attendance)
+                return Response(serializer.data)
+            except StaffAttendance.DoesNotExist:
+                return Response({
+                    'has_checked_in': False,
+                    'has_checked_out': False,
+                    'date': today.isoformat(),
+                    'message': 'No attendance record for today'
+                })
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=False, methods=['post'])
+    def check_in(self, request):
+        """Check in with photo and geolocation."""
+        try:
+            employee = request.user.employee_profile
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        today = date.today()
+
+        # Check if already checked in today
+        existing = StaffAttendance.objects.filter(
+            employee=employee,
+            date=today
+        ).first()
+
+        if existing and existing.check_in_time:
+            return Response(
+                {'error': 'Already checked in today', 'attendance': StaffAttendanceSerializer(existing).data},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate request data
+        serializer = StaffAttendanceCheckInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Process base64 photo (handles data URI format)
+        photo_data = data['photo']
+        photo_file = ContentFile(
+            decode_base64_photo(photo_data),
+            name=f'checkin_{employee.employee_code}_{today.isoformat()}.jpg'
+        )
+
+        # Create or update attendance record
+        if existing:
+            attendance = existing
+            attendance.check_in_time = timezone.now()
+            attendance.check_in_photo = photo_file
+            attendance.check_in_latitude = data['latitude']
+            attendance.check_in_longitude = data['longitude']
+            attendance.check_in_within_geofence = data['within_geofence']
+            attendance.status = 'checked_in'
+            attendance.save()
+        else:
+            attendance = StaffAttendance.objects.create(
+                employee=employee,
+                date=today,
+                check_in_time=timezone.now(),
+                check_in_photo=photo_file,
+                check_in_latitude=data['latitude'],
+                check_in_longitude=data['longitude'],
+                check_in_within_geofence=data['within_geofence'],
+                status='checked_in'
+            )
+
+        return Response(
+            StaffAttendanceSerializer(attendance).data,
+            status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=False, methods=['post'])
+    def check_out(self, request):
+        """Check out with photo and geolocation."""
+        try:
+            employee = request.user.employee_profile
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        today = date.today()
+
+        # Check if checked in today
+        try:
+            attendance = StaffAttendance.objects.get(
+                employee=employee,
+                date=today
+            )
+        except StaffAttendance.DoesNotExist:
+            return Response(
+                {'error': 'No check-in record found for today'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not attendance.check_in_time:
+            return Response(
+                {'error': 'You must check in before checking out'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if attendance.check_out_time:
+            return Response(
+                {'error': 'Already checked out today', 'attendance': StaffAttendanceSerializer(attendance).data},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate request data
+        serializer = StaffAttendanceCheckOutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Process base64 photo (handles data URI format)
+        photo_data = data['photo']
+        photo_file = ContentFile(
+            decode_base64_photo(photo_data),
+            name=f'checkout_{employee.employee_code}_{today.isoformat()}.jpg'
+        )
+
+        # Update attendance record
+        attendance.check_out_time = timezone.now()
+        attendance.check_out_photo = photo_file
+        attendance.check_out_latitude = data['latitude']
+        attendance.check_out_longitude = data['longitude']
+        attendance.check_out_within_geofence = data['within_geofence']
+        attendance.status = 'checked_out'
+
+        # Calculate hours worked
+        if attendance.check_in_time and attendance.check_out_time:
+            duration = attendance.check_out_time - attendance.check_in_time
+            hours = Decimal(str(duration.total_seconds() / 3600))
+            attendance.hours_worked = round(hours, 2)
+
+        attendance.save()
+
+        return Response(StaffAttendanceSerializer(attendance).data)
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Get attendance summary for current user."""
+        try:
+            employee = request.user.employee_profile
+        except EmployeeProfile.DoesNotExist:
+            return Response(
+                {'error': 'Employee profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get date range (default to current month)
+        today = date.today()
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        if not start_date:
+            start_date = today.replace(day=1)
+        else:
+            start_date = date.fromisoformat(start_date)
+
+        if not end_date:
+            end_date = today
+        else:
+            end_date = date.fromisoformat(end_date)
+
+        # Get attendance records
+        records = StaffAttendance.objects.filter(
+            employee=employee,
+            date__gte=start_date,
+            date__lte=end_date
+        )
+
+        # Calculate summary
+        total_days = (end_date - start_date).days + 1
+        present_days = records.filter(status__in=['checked_in', 'checked_out']).count()
+        absent_days = records.filter(status='absent').count()
+        on_leave_days = records.filter(status='on_leave').count()
+        half_days = records.filter(status='half_day').count()
+
+        # Calculate total hours
+        total_hours = records.exclude(hours_worked__isnull=True).aggregate(
+            total=Sum('hours_worked')
+        )['total'] or Decimal('0')
+
+        avg_hours = total_hours / present_days if present_days > 0 else Decimal('0')
+
+        # Working days calculation (assuming 5-day work week)
+        working_days = sum(
+            1 for i in range(total_days)
+            if (start_date + timezone.timedelta(days=i)).weekday() < 5
+        )
+
+        attendance_percentage = (present_days / working_days * 100) if working_days > 0 else Decimal('0')
+
+        summary_data = {
+            'total_days': total_days,
+            'working_days': working_days,
+            'present_days': present_days,
+            'absent_days': absent_days,
+            'on_leave_days': on_leave_days,
+            'half_days': half_days,
+            'total_hours_worked': float(total_hours),
+            'avg_hours_per_day': float(round(avg_hours, 2)),
+            'attendance_percentage': float(round(attendance_percentage, 2)),
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat()
+        }
+
+        return Response(summary_data)

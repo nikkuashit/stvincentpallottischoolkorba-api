@@ -11,6 +11,7 @@ API endpoints for HR management:
 - /api/hr/leave-requests/
 - /api/hr/holidays/
 - /api/hr/audit-logs/
+- /api/hr/staff-attendance/
 """
 
 from django.urls import path, include
@@ -25,6 +26,7 @@ from .views import (
     LeaveRequestViewSet,
     LeaveBalanceAuditLogViewSet,
     HolidayViewSet,
+    StaffAttendanceViewSet,
 )
 
 router = DefaultRouter()
@@ -37,6 +39,7 @@ router.register(r'leave-balances', LeaveBalanceViewSet, basename='leave-balance'
 router.register(r'leave-requests', LeaveRequestViewSet, basename='leave-request')
 router.register(r'holidays', HolidayViewSet, basename='holiday')
 router.register(r'audit-logs', LeaveBalanceAuditLogViewSet, basename='audit-log')
+router.register(r'staff-attendance', StaffAttendanceViewSet, basename='staff-attendance')
 
 urlpatterns = [
     path('', include(router.urls)),

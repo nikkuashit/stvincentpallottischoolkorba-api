@@ -206,8 +206,8 @@ class StudentMinimalSerializer(serializers.Serializer):
     current_class_name = serializers.SerializerMethodField()
 
     def get_current_class_name(self, obj):
-        if obj.current_class:
-            return obj.current_class.name
+        if obj.current_section:
+            return f"{obj.current_section.grade.name} - {obj.current_section.name}"
         return None
 
 

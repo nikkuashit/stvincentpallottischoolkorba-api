@@ -21,6 +21,139 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 # PHASE A: FOUNDATION MODELS (Academic Structure Redesign)
 # =============================================================================
 
+class GradeType(models.Model):
+    """
+    Configurable grade types that admins can manage.
+    Defines the available grades like Nursery, Pre-KG, KG, Class 1-12, etc.
+
+    This allows schools to customize their grade structure without code changes.
+    """
+    CATEGORY_CHOICES = [
+        ('pre_primary', 'Pre-Primary'),
+        ('primary', 'Primary'),
+        ('middle', 'Middle School'),
+        ('secondary', 'Secondary'),
+        ('senior_secondary', 'Senior Secondary'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Unique identifier for the grade (e.g., -3, -2, -1, 1, 2, ... 12)
+    number = models.IntegerField(
+        unique=True,
+        validators=[MinValueValidator(-10), MaxValueValidator(15)],
+        help_text="Unique grade number. Use negative for pre-primary (e.g., -3=Nursery, -2=Pre-KG, -1=KG)"
+    )
+
+    # Display name
+    name = models.CharField(
+        max_length=100,
+        help_text="Display name for this grade (e.g., 'Nursery', 'Pre-KG', 'Class 5')"
+    )
+
+    # Short name for labels
+    short_name = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Short name for compact displays (e.g., 'Nur', 'LKG', '5')"
+    )
+
+    # Category for grouping in UI
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default='primary',
+        help_text="Category for grouping in dropdowns"
+    )
+
+    # Display order for sorting
+    display_order = models.IntegerField(
+        default=0,
+        help_text="Order for display purposes (lower numbers appear first)"
+    )
+
+    # Description
+    description = models.TextField(
+        blank=True,
+        help_text="Optional description for this grade type"
+    )
+
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Is this grade type available for use?"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_order', 'number']
+        verbose_name = "Grade Type"
+        verbose_name_plural = "Grade Types"
+        indexes = [
+            models.Index(fields=['display_order', 'number']),
+            models.Index(fields=['is_active']),
+            models.Index(fields=['category']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.number})"
+
+    def save(self, *args, **kwargs):
+        # Auto-generate short_name if not provided
+        if not self.short_name:
+            if self.number < 0:
+                # For pre-primary, use first 3 letters
+                self.short_name = self.name[:3].upper()
+            else:
+                # For classes, use the number
+                self.short_name = str(self.number)
+
+        # Auto-set display_order if not set
+        if self.display_order == 0:
+            if self.number < 0:
+                self.display_order = self.number + 10  # -3→7, -2→8, -1→9
+            else:
+                self.display_order = self.number + 9  # 1→10, 2→11, ... 12→21
+
+        # Auto-set category based on number if not explicitly set
+        if self.category == 'primary':  # Default value, might need updating
+            if self.number < 0:
+                self.category = 'pre_primary'
+            elif self.number <= 5:
+                self.category = 'primary'
+            elif self.number <= 8:
+                self.category = 'middle'
+            elif self.number <= 10:
+                self.category = 'secondary'
+            else:
+                self.category = 'senior_secondary'
+
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_default_grade_types(cls):
+        """Returns default grade types for initial setup."""
+        return [
+            {'number': -3, 'name': 'Nursery', 'short_name': 'NUR', 'category': 'pre_primary', 'display_order': 1},
+            {'number': -2, 'name': 'Pre-KG (LKG)', 'short_name': 'LKG', 'category': 'pre_primary', 'display_order': 2},
+            {'number': -1, 'name': 'KG (UKG)', 'short_name': 'UKG', 'category': 'pre_primary', 'display_order': 3},
+            {'number': 1, 'name': 'Class 1', 'short_name': '1', 'category': 'primary', 'display_order': 4},
+            {'number': 2, 'name': 'Class 2', 'short_name': '2', 'category': 'primary', 'display_order': 5},
+            {'number': 3, 'name': 'Class 3', 'short_name': '3', 'category': 'primary', 'display_order': 6},
+            {'number': 4, 'name': 'Class 4', 'short_name': '4', 'category': 'primary', 'display_order': 7},
+            {'number': 5, 'name': 'Class 5', 'short_name': '5', 'category': 'primary', 'display_order': 8},
+            {'number': 6, 'name': 'Class 6', 'short_name': '6', 'category': 'middle', 'display_order': 9},
+            {'number': 7, 'name': 'Class 7', 'short_name': '7', 'category': 'middle', 'display_order': 10},
+            {'number': 8, 'name': 'Class 8', 'short_name': '8', 'category': 'middle', 'display_order': 11},
+            {'number': 9, 'name': 'Class 9', 'short_name': '9', 'category': 'secondary', 'display_order': 12},
+            {'number': 10, 'name': 'Class 10', 'short_name': '10', 'category': 'secondary', 'display_order': 13},
+            {'number': 11, 'name': 'Class 11', 'short_name': '11', 'category': 'senior_secondary', 'display_order': 14},
+            {'number': 12, 'name': 'Class 12', 'short_name': '12', 'category': 'senior_secondary', 'display_order': 15},
+        ]
+
+
 class SchoolSettings(models.Model):
     """
     Singleton model for school-wide settings and configuration.
@@ -52,12 +185,6 @@ class SchoolSettings(models.Model):
         related_name='current_year_settings',
         help_text="Currently active academic year"
     )
-    default_section_capacity = models.IntegerField(
-        default=65,
-        validators=[MinValueValidator(1)],
-        help_text="Default maximum students per section"
-    )
-
     # Roll number algorithm settings
     roll_number_sort_by = models.CharField(
         max_length=50,
@@ -137,19 +264,32 @@ class AcademicYear(models.Model):
 
 class Grade(models.Model):
     """
-    Grade/Class level (e.g., Class 1, Class 2... Class 12).
-    Replaces the 'grade' field from the old Class model.
+    Grade/Class level for a specific academic year.
+    References GradeType for the grade configuration.
+
+    Example: Grade for "Class 5" in academic year "2025-26"
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+    # Link to GradeType for configuration
+    grade_type = models.ForeignKey(
+        GradeType,
+        on_delete=models.PROTECT,
+        related_name='grades',
+        null=True,
+        blank=True,
+        help_text="Reference to the grade type configuration"
+    )
+
+    # Keep number for backward compatibility (will be synced from grade_type)
     number = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(12)],
-        help_text="Grade number (1-12)"
+        validators=[MinValueValidator(-10), MaxValueValidator(15)],
+        help_text="Grade number (synced from grade_type)"
     )
     name = models.CharField(
         max_length=100,
         blank=True,
-        help_text="Optional display name (e.g., 'Class 5')"
+        help_text="Display name (auto-generated from grade_type if not provided)"
     )
     description = models.TextField(blank=True)
 
@@ -169,7 +309,7 @@ class Grade(models.Model):
 
     display_order = models.IntegerField(
         default=0,
-        help_text="Order for display purposes"
+        help_text="Order for display purposes (auto-set from grade_type if 0)"
     )
 
     is_active = models.BooleanField(default=True)
@@ -177,22 +317,48 @@ class Grade(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['academic_year', 'number']
+        ordering = ['academic_year', 'display_order', 'number']
         unique_together = [['academic_year', 'number']]
         indexes = [
             models.Index(fields=['academic_year', 'number']),
+            models.Index(fields=['academic_year', 'display_order']),
             models.Index(fields=['is_active']),
+            models.Index(fields=['grade_type']),
         ]
 
     def __str__(self):
         if self.name:
             return f"{self.name} ({self.academic_year.name})"
-        return f"Grade {self.number} ({self.academic_year.name})"
+        return f"{self.get_default_name()} ({self.academic_year.name})"
+
+    def get_default_name(self):
+        """Get default name based on grade_type or number."""
+        if self.grade_type:
+            return self.grade_type.name
+        # Fallback for backward compatibility
+        if self.number < 0:
+            names = {-3: 'Nursery', -2: 'Pre-KG', -1: 'KG'}
+            return names.get(self.number, f"Pre-Primary {self.number}")
+        return f"Class {self.number}"
 
     def save(self, *args, **kwargs):
+        # Sync number and display_order from grade_type if available
+        if self.grade_type:
+            self.number = self.grade_type.number
+            if self.display_order == 0:
+                self.display_order = self.grade_type.display_order
+
         # Auto-generate name if not provided
         if not self.name:
-            self.name = f"Class {self.number}"
+            self.name = self.get_default_name()
+
+        # Auto-set display_order based on number if still 0
+        if self.display_order == 0:
+            if self.number < 0:
+                self.display_order = self.number + 4  # -3→1, -2→2, -1→3
+            else:
+                self.display_order = self.number + 3  # 1→4, 2→5, ... 12→15
+
         super().save(*args, **kwargs)
 
 
@@ -215,11 +381,6 @@ class Section(models.Model):
         help_text="Section name (e.g., A, B, C)"
     )
 
-    capacity = models.IntegerField(
-        validators=[MinValueValidator(1)],
-        help_text="Maximum number of students in this section"
-    )
-
     class_teacher = models.ForeignKey(
         'accounts.UserProfile',
         on_delete=models.SET_NULL,
@@ -237,6 +398,15 @@ class Section(models.Model):
     )
 
     room_number = models.CharField(max_length=50, blank=True)
+
+    room_layout = models.ForeignKey(
+        'RoomLayout',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sections',
+        help_text="Room layout template assigned to this section"
+    )
 
     is_active = models.BooleanField(
         default=True,
@@ -269,8 +439,17 @@ class Section(models.Model):
         return self.students.filter(status='active').count()
 
     @property
+    def capacity(self):
+        """Returns total seat capacity from assigned room layout, or None if no layout"""
+        if self.room_layout:
+            return self.room_layout.total_seats
+        return None
+
+    @property
     def available_capacity(self):
         """Returns available seats in this section"""
+        if self.capacity is None:
+            return None
         return self.capacity - self.current_strength
 
 
@@ -313,9 +492,9 @@ class StudentEnrollment(models.Model):
         help_text='Academic year for this enrollment'
     )
 
-    roll_number = models.IntegerField(
-        validators=[MinValueValidator(1)],
-        help_text='Roll number assigned to student in this section'
+    roll_number = models.CharField(
+        max_length=20,
+        help_text='Roll number assigned to student in this section (supports alphanumeric like 7A01)'
     )
     enrolled_date = models.DateField(
         help_text='Date when student was enrolled in this section'
@@ -686,69 +865,14 @@ class SubjectTeacher(models.Model):
         return self.section.grade
 
 
-# =============================================================================
-# DEPRECATED MODEL (To be removed in Phase B)
-# =============================================================================
-
-class Class(models.Model):
-    """
-    DEPRECATED: This model is being replaced by the Grade -> Section hierarchy.
-    Will be removed after data migration to new structure.
-    Use Grade and Section models instead.
-    """
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
-    name = models.CharField(max_length=100)
-    grade = models.IntegerField()
-    section = models.CharField(max_length=10)
-    class_teacher = models.ForeignKey(
-        'accounts.UserProfile',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='taught_classes'
-    )
-
-    room_number = models.CharField(max_length=50, blank=True)
-    capacity = models.IntegerField(null=True, blank=True)
-
-    is_active = models.BooleanField(default=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name_plural = "Classes (DEPRECATED)"
-        ordering = ['grade', 'section']
-        unique_together = [['grade', 'section']]
-        indexes = [
-            models.Index(fields=['is_active']),
-        ]
-
-    def __str__(self):
-        return f"{self.name} (DEPRECATED - Use Grade/Section instead)"
-
-
 class Student(models.Model):
     """
-    Student information with support for Phase B enrollment and photo management.
-
-    NOTE: current_class is DEPRECATED - use current_section instead (linked via Section model).
-    This field is kept for backward compatibility during migration.
+    Student information with support for enrollment and photo management.
+    Students are assigned to sections (e.g., "5A", "7B") which belong to grades.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # DEPRECATED: Use current_section instead
-    current_class = models.ForeignKey(
-        Class,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='students',
-        help_text='DEPRECATED - Use current_section instead'
-    )
-
-    # Phase B: Current section (replaces current_class)
+    # Current section the student is enrolled in (e.g., "5A", "7B")
     current_section = models.ForeignKey(
         'Section',
         on_delete=models.SET_NULL,
@@ -780,11 +904,11 @@ class Student(models.Model):
         unique=True,
         help_text='Permanent admission number (format: {prefix}{YY}{sequence}, e.g., SVP25001)'
     )
-    roll_number = models.IntegerField(
+    roll_number = models.CharField(
+        max_length=20,
         null=True,
         blank=True,
-        validators=[MinValueValidator(1)],
-        help_text='Current roll number in current section (shortcut field)'
+        help_text='Current roll number in current section (supports alphanumeric like 7A01)'
     )
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
@@ -1017,12 +1141,17 @@ class Subject(models.Model):
 
 
 class Course(models.Model):
-    """Course assignment to classes"""
+    """Course assignment to sections (Phase B: uses Section instead of deprecated Class)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    class_assigned = models.ForeignKey(
-        Class,
+
+    # Phase B: Section replaces deprecated Class (temporarily nullable for migration)
+    section = models.ForeignKey(
+        'Section',
         on_delete=models.CASCADE,
-        related_name='courses'
+        related_name='courses',
+        null=True,
+        blank=True,
+        help_text='Section this course is assigned to'
     )
     subject = models.ForeignKey(
         Subject,
@@ -1048,14 +1177,14 @@ class Course(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['class_assigned', 'subject']
-        unique_together = [['class_assigned', 'subject', 'academic_year']]
+        ordering = ['section', 'subject']
+        unique_together = [['section', 'subject', 'academic_year']]
         indexes = [
             models.Index(fields=['is_active']),
         ]
 
     def __str__(self):
-        return f"{self.subject.name} - {self.class_assigned.name}"
+        return f"{self.subject.name} - {self.section.full_name}"
 
 
 # =============================================================================
@@ -1084,7 +1213,7 @@ class AttendanceSession(models.Model):
 
 
 class Attendance(models.Model):
-    """Individual attendance record for a student"""
+    """Individual attendance record for a student (Phase B: uses Section instead of deprecated Class)"""
     STATUS_CHOICES = [
         ('present', 'Present'),
         ('absent', 'Absent'),
@@ -1099,10 +1228,14 @@ class Attendance(models.Model):
         on_delete=models.CASCADE,
         related_name='attendance_records'
     )
-    class_assigned = models.ForeignKey(
-        Class,
+    # Phase B: Section replaces deprecated Class (temporarily nullable for migration)
+    section = models.ForeignKey(
+        'Section',
         on_delete=models.CASCADE,
-        related_name='attendance_records'
+        related_name='attendance_records',
+        null=True,
+        blank=True,
+        help_text='Section for attendance tracking'
     )
     academic_year = models.ForeignKey(
         AcademicYear,
@@ -1138,7 +1271,7 @@ class Attendance(models.Model):
         indexes = [
             models.Index(fields=['date']),
             models.Index(fields=['status']),
-            models.Index(fields=['class_assigned', 'date']),
+            models.Index(fields=['section', 'date']),
             models.Index(fields=['student', 'date']),
         ]
 
@@ -1281,7 +1414,7 @@ class GradeRange(models.Model):
 
 
 class Exam(models.Model):
-    """Specific exam instance for a class/subject in an academic year"""
+    """Specific exam instance for a section/subject in an academic year (Phase B: uses Section instead of deprecated Class)"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     exam_type = models.ForeignKey(
@@ -1294,10 +1427,14 @@ class Exam(models.Model):
         on_delete=models.CASCADE,
         related_name='exams'
     )
-    class_assigned = models.ForeignKey(
-        Class,
+    # Phase B: Section replaces deprecated Class (temporarily nullable for migration)
+    section = models.ForeignKey(
+        'Section',
         on_delete=models.CASCADE,
-        related_name='exams'
+        related_name='exams',
+        null=True,
+        blank=True,
+        help_text='Section for exam assignment'
     )
     subject = models.ForeignKey(
         Subject,
@@ -1328,15 +1465,15 @@ class Exam(models.Model):
 
     class Meta:
         ordering = ['-academic_year__start_date', 'exam_type__display_order']
-        unique_together = [['exam_type', 'academic_year', 'class_assigned', 'subject']]
+        unique_together = [['exam_type', 'academic_year', 'section', 'subject']]
 
     def __str__(self):
-        return self.name or f"{self.exam_type.name} - {self.subject.name} - {self.class_assigned.name}"
+        return self.name or f"{self.exam_type.name} - {self.subject.name} - {self.section.full_name}"
 
     def save(self, *args, **kwargs):
         # Auto-generate name if not provided
         if not self.name:
-            self.name = f"{self.exam_type.name} - {self.subject.name} - {self.class_assigned.name}"
+            self.name = f"{self.exam_type.name} - {self.subject.name} - {self.section.full_name}"
         super().save(*args, **kwargs)
 
 
@@ -1484,3 +1621,116 @@ class MarkAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.student_mark} - Changed from {self.old_marks} to {self.new_marks}"
+
+
+# =============================================================================
+# ROOM LAYOUT & SEATING ARRANGEMENT
+# =============================================================================
+
+class RoomLayout(models.Model):
+    """
+    Reusable room layout template defining desk grid configuration.
+    Not tied to any section or academic year — can be shared across sections.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, help_text="Layout name (e.g., Room 101 Layout)")
+    rows = models.PositiveIntegerField(help_text="Number of rows in the grid")
+    columns = models.PositiveIntegerField(help_text="Number of columns (desks per row)")
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.rows}×{self.columns})"
+
+    @property
+    def total_seats(self):
+        """Sum of all active desk capacities."""
+        return sum(d.capacity for d in self.desks.filter(is_active=True))
+
+    @property
+    def desk_count(self):
+        """Number of active desks."""
+        return self.desks.filter(is_active=True).count()
+
+
+class Desk(models.Model):
+    """
+    A single desk in a room layout grid.
+    Each desk has its own capacity (1-3 students).
+    Inactive desks represent aisles or empty spaces.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    room_layout = models.ForeignKey(
+        RoomLayout,
+        on_delete=models.CASCADE,
+        related_name='desks'
+    )
+    row = models.PositiveIntegerField(help_text="0-indexed row position")
+    column = models.PositiveIntegerField(help_text="0-indexed column position")
+    capacity = models.PositiveIntegerField(
+        default=2,
+        validators=[MinValueValidator(1), MaxValueValidator(3)],
+        help_text="Number of students this desk can seat (1-3)"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="False = aisle or empty space"
+    )
+    label = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Optional label (e.g., R1-C3)"
+    )
+
+    class Meta:
+        unique_together = [['room_layout', 'row', 'column']]
+        ordering = ['row', 'column']
+
+    def __str__(self):
+        return f"Desk ({self.row},{self.column}) - cap:{self.capacity}"
+
+
+class SeatingAssignment(models.Model):
+    """
+    Links a student to a specific desk position within a section.
+    Each student can only have one seat per section.
+    Each desk position can only hold one student.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    section = models.ForeignKey(
+        Section,
+        on_delete=models.CASCADE,
+        related_name='seating_assignments'
+    )
+    desk = models.ForeignKey(
+        Desk,
+        on_delete=models.CASCADE,
+        related_name='assignments'
+    )
+    student = models.ForeignKey(
+        'Student',
+        on_delete=models.CASCADE,
+        related_name='seating_assignments'
+    )
+    position = models.PositiveIntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(3)],
+        help_text="1-based position within desk (1, 2, or 3)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [
+            ['section', 'student'],          # Student sits in one desk per section
+            ['desk', 'position', 'section'],  # One student per position per desk
+        ]
+        ordering = ['desk__row', 'desk__column', 'position']
+
+    def __str__(self):
+        return f"{self.student} → Desk({self.desk.row},{self.desk.column}) pos {self.position}"

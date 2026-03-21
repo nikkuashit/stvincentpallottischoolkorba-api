@@ -23,6 +23,7 @@ from .models import (
     LeaveApproval,
     LeaveBalanceAuditLog,
     Holiday,
+    StaffAttendance,
 )
 
 
@@ -221,7 +222,7 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
             'id', 'name', 'code', 'description',
             'is_paid', 'requires_document', 'min_days_notice',
             'max_consecutive_days', 'applicable_gender', 'color',
-            'is_active', 'display_order', 'created_at', 'updated_at'
+            'is_applyable', 'is_active', 'display_order', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -510,3 +511,80 @@ class EmployeeLeaveReportSerializer(serializers.Serializer):
     total_taken = serializers.DecimalField(max_digits=5, decimal_places=1)
     total_pending = serializers.DecimalField(max_digits=5, decimal_places=1)
     total_available = serializers.DecimalField(max_digits=5, decimal_places=1)
+
+
+# =============================================================================
+# STAFF ATTENDANCE SERIALIZERS
+# =============================================================================
+
+class StaffAttendanceSerializer(serializers.ModelSerializer):
+    """Staff attendance record serializer for list views."""
+    employee_name = serializers.SerializerMethodField()
+    employee_code = serializers.CharField(source='employee.employee_code', read_only=True)
+    hours_worked_display = serializers.CharField(read_only=True)
+    check_in_location = serializers.DictField(read_only=True)
+    check_out_location = serializers.DictField(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = StaffAttendance
+        fields = [
+            'id', 'employee', 'employee_name', 'employee_code', 'date',
+            'check_in_time', 'check_in_photo', 'check_in_latitude', 'check_in_longitude',
+            'check_in_location', 'check_in_within_geofence',
+            'check_out_time', 'check_out_photo', 'check_out_latitude', 'check_out_longitude',
+            'check_out_location', 'check_out_within_geofence',
+            'hours_worked', 'hours_worked_display',
+            'status', 'status_display', 'sync_status', 'notes',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'hours_worked', 'created_at', 'updated_at']
+
+    def get_employee_name(self, obj):
+        return obj.employee.full_name
+
+
+class StaffAttendanceCheckInSerializer(serializers.Serializer):
+    """Serializer for check-in request with base64 photo."""
+    photo = serializers.CharField(help_text="Base64 encoded photo data")
+    latitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    longitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    within_geofence = serializers.BooleanField(default=True)
+
+    def validate_photo(self, value):
+        # Remove data URL prefix if present
+        if value.startswith('data:image'):
+            # Extract base64 data after the comma
+            parts = value.split(',')
+            if len(parts) == 2:
+                return parts[1]
+        return value
+
+
+class StaffAttendanceCheckOutSerializer(serializers.Serializer):
+    """Serializer for check-out request with base64 photo."""
+    photo = serializers.CharField(help_text="Base64 encoded photo data")
+    latitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    longitude = serializers.DecimalField(max_digits=10, decimal_places=7)
+    within_geofence = serializers.BooleanField(default=True)
+
+    def validate_photo(self, value):
+        # Remove data URL prefix if present
+        if value.startswith('data:image'):
+            # Extract base64 data after the comma
+            parts = value.split(',')
+            if len(parts) == 2:
+                return parts[1]
+        return value
+
+
+class StaffAttendanceSummarySerializer(serializers.Serializer):
+    """Summary of attendance for a period."""
+    total_days = serializers.IntegerField()
+    present_days = serializers.IntegerField()
+    absent_days = serializers.IntegerField()
+    on_leave_days = serializers.IntegerField()
+    half_days = serializers.IntegerField()
+    total_hours_worked = serializers.DecimalField(max_digits=6, decimal_places=2)
+    avg_hours_per_day = serializers.DecimalField(max_digits=4, decimal_places=2)
+    attendance_percentage = serializers.DecimalField(max_digits=5, decimal_places=2)

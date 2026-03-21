@@ -6,7 +6,6 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     AcademicYearViewSet,
-    ClassViewSet,
     StudentViewSet,
     ParentViewSet,
     SubjectViewSet,
@@ -25,6 +24,7 @@ from .views import (
     StudentAdmissionViewSet,
     # Phase A: Academic Structure
     SchoolSettingsViewSet,
+    GradeTypeViewSet,
     GradeViewSet,
     SectionViewSet,
     # Phase B: Student Core
@@ -33,12 +33,14 @@ from .views import (
     # Phase C: Teacher Assignment
     ClassTeacherViewSet,
     SubjectTeacherViewSet,
+    # Room Layout & Seating
+    RoomLayoutViewSet,
+    SeatingAssignmentViewSet,
 )
 
 router = DefaultRouter()
 # Core academics
 router.register(r'academic-years', AcademicYearViewSet, basename='academic-year')
-router.register(r'classes', ClassViewSet, basename='class')
 router.register(r'students', StudentViewSet, basename='student')
 router.register(r'parents', ParentViewSet, basename='parent')
 router.register(r'subjects', SubjectViewSet, basename='subject')
@@ -61,6 +63,7 @@ router.register(r'admissions', StudentAdmissionViewSet, basename='admission')
 
 # Phase A: Academic Structure (new)
 router.register(r'school-settings', SchoolSettingsViewSet, basename='school-settings')
+router.register(r'grade-types', GradeTypeViewSet, basename='grade-type')
 router.register(r'grades', GradeViewSet, basename='grade')
 router.register(r'sections', SectionViewSet, basename='section')
 
@@ -71,6 +74,10 @@ router.register(r'student-photos', StudentPhotoViewSet, basename='student-photo'
 # Phase C: Teacher Assignment
 router.register(r'class-teachers', ClassTeacherViewSet, basename='class-teacher')
 router.register(r'subject-teachers', SubjectTeacherViewSet, basename='subject-teacher')
+
+# Room Layout & Seating
+router.register(r'room-layouts', RoomLayoutViewSet, basename='room-layout')
+router.register(r'seating-assignments', SeatingAssignmentViewSet, basename='seating-assignment')
 
 urlpatterns = [
     path('', include(router.urls)),

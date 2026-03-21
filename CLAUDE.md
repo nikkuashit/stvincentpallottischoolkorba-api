@@ -59,14 +59,125 @@ orgs = Organization.objects.all()
 
 ### Testing & Quality
 ```bash
-# Run tests (when test suite is created)
-pipenv run python manage.py test
+# Run all tests with pytest
+pipenv run pytest
+
+# Run tests with verbose output
+pipenv run pytest -v
+
+# Run specific test file
+pipenv run pytest tests/unit/accounts/test_models.py
+
+# Run tests matching a pattern
+pipenv run pytest -k "test_user"
+
+# Run with coverage report
+pipenv run pytest --cov=./ --cov-report=html
+
+# Run only unit tests
+pipenv run pytest -m unit
+
+# Run only integration tests
+pipenv run pytest -m integration
 
 # Check for issues
 pipenv run python manage.py check
+```
 
-# Validate models
-pipenv run python manage.py validate
+## Test-Driven Development (TDD) Workflow
+
+### Red-Green-Refactor Cycle
+
+1. **RED**: Write a failing test first
+2. **GREEN**: Write minimal code to make the test pass
+3. **REFACTOR**: Clean up code while keeping tests green
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Shared pytest fixtures
+├── factories/                     # Factory Boy model factories
+│   ├── __init__.py
+│   ├── user_factories.py          # UserFactory, UserProfileFactory
+│   ├── tenant_factories.py        # OrganizationFactory, SchoolFactory
+│   ├── academic_factories.py      # StudentFactory, GradeFactory
+│   └── cms_factories.py           # NavigationMenuFactory, PageFactory
+├── unit/                          # Unit tests (fast, isolated)
+│   ├── accounts/
+│   │   ├── test_models.py
+│   │   └── test_serializers.py
+│   ├── academics/
+│   │   └── test_models.py
+│   └── cms/
+│       └── test_models.py
+└── integration/                   # API/Integration tests
+    └── test_auth_api.py
+```
+
+### Using Factories
+
+```python
+from tests.factories import UserFactory, UserProfileFactory, StudentFactory
+
+# Create a basic user
+user = UserFactory()
+
+# Create an admin user
+admin = UserFactory(admin=True)  # Uses Params trait
+
+# Create a user profile with role
+profile = UserProfileFactory(admin=True)  # super_admin role
+profile = UserProfileFactory(teacher=True)  # school_staff role
+
+# Create a student
+student = StudentFactory(
+    first_name="John",
+    last_name="Doe",
+    status="active"
+)
+```
+
+### Writing Tests
+
+```python
+import pytest
+from tests.factories import UserProfileFactory
+
+@pytest.mark.django_db
+class TestUserProfileModel:
+    def test_user_profile_creation(self):
+        """Test that a user profile can be created with valid data."""
+        profile = UserProfileFactory()
+
+        assert profile.pk is not None
+        assert profile.user is not None
+        assert profile.role == 'student'  # default role
+
+    def test_admin_profile_has_super_admin_role(self):
+        """Admin trait should set role to super_admin."""
+        profile = UserProfileFactory(admin=True)
+
+        assert profile.role == 'super_admin'
+        assert profile.user.is_superuser is True
+```
+
+### Coverage Targets
+
+| Layer | Target | Priority Areas |
+|-------|--------|----------------|
+| Models | 80% | Field validation, str representations |
+| Serializers | 75% | Validation, nested relations |
+| Views/APIs | 70% | CRUD operations, permissions |
+| Permissions | 90% | Access control logic |
+
+### Test Markers
+
+```python
+@pytest.mark.unit           # Fast, isolated tests
+@pytest.mark.integration    # Tests that hit database/APIs
+@pytest.mark.slow           # Long-running tests
+@pytest.mark.django_db      # Tests requiring database access
 ```
 
 ### Data Management

@@ -77,6 +77,10 @@ urlpatterns = [
     path("academics/", include("academics.urls")),
     # HR API endpoints (Departments, Employees, Leave Management)
     path("hr/", include("hr.urls")),
+    # Transport API endpoints (Vehicles, Drivers, Routes, Bus Stops)
+    path("transport/", include("transport.urls")),
+    # Fees API endpoints (Fee categories, structures, payments, reports)
+    path("fees/", include("fees.urls")),
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

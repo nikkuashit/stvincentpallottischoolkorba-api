@@ -22,6 +22,12 @@ python-dateutil = "*"
 openpyxl = "*"
 
 [dev-packages]
+pytest = "*"
+pytest-django = "*"
+pytest-cov = "*"
+factory-boy = "*"
+faker = "*"
+pytest-xdist = "*"
 
 [requires]
 python_version = "3.13"

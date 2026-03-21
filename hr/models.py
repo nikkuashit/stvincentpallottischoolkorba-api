@@ -268,6 +268,13 @@ class LeaveType(models.Model):
     # Color for UI display
     color = models.CharField(max_length=7, default='#3B82F6', help_text="Hex color code for UI")
 
+    # Whether staff can apply for this leave type
+    # Set to False for calendar-only types like Summer Break, Winter Break, Holidays
+    is_applyable = models.BooleanField(
+        default=True,
+        help_text="If False, this leave type is calendar-only (admin sets, staff views but cannot apply)"
+    )
+
     is_active = models.BooleanField(default=True)
     display_order = models.PositiveIntegerField(default=0)
 
@@ -430,6 +437,68 @@ class LeavePolicy(models.Model):
             return (self.annual_quota * Decimal(remaining_quarters) / Decimal('4')).quantize(Decimal('0.5'))
 
         return self.annual_quota
+
+    def calculate_accrued_quota(self, joining_date, year, as_of_date=None):
+        """
+        Calculate accrued leave quota based on accrual_type.
+        - yearly: Full quota credited at start of year
+        - monthly: Quota credited monthly (annual_quota / 12 per month)
+        - quarterly: Quota credited quarterly (annual_quota / 4 per quarter)
+
+        Also applies proration for mid-year joiners.
+        Returns the accrued amount as of as_of_date (defaults to today).
+        """
+        if as_of_date is None:
+            as_of_date = date.today()
+
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+
+        # If as_of_date is not in the specified year, adjust
+        if as_of_date.year != year:
+            if as_of_date.year > year:
+                # Full year has passed, return full annual quota (prorated if joined mid-year)
+                return self.calculate_prorated_quota(joining_date, year)
+            else:
+                # Year hasn't started yet
+                return Decimal('0')
+
+        # If joined after this year, no quota
+        if joining_date > year_end:
+            return Decimal('0')
+
+        # Determine effective start month (either Jan or joining month)
+        if joining_date < year_start:
+            effective_start_month = 1
+        else:
+            effective_start_month = joining_date.month
+
+        current_month = as_of_date.month
+
+        # For yearly accrual, credit full quota at start of year
+        if self.accrual_type == 'yearly':
+            return self.calculate_prorated_quota(joining_date, year)
+
+        # For monthly accrual
+        elif self.accrual_type == 'monthly':
+            monthly_quota = self.annual_quota / Decimal('12')
+            # Count months from effective start to current month (inclusive)
+            months_accrued = current_month - effective_start_month + 1
+            accrued = monthly_quota * Decimal(max(0, months_accrued))
+            return accrued.quantize(Decimal('0.5'))
+
+        # For quarterly accrual
+        elif self.accrual_type == 'quarterly':
+            quarterly_quota = self.annual_quota / Decimal('4')
+            # Determine current quarter and effective start quarter
+            current_quarter = (current_month - 1) // 3 + 1
+            effective_start_quarter = (effective_start_month - 1) // 3 + 1
+            # Count completed quarters (inclusive of current)
+            quarters_accrued = current_quarter - effective_start_quarter + 1
+            accrued = quarterly_quota * Decimal(max(0, quarters_accrued))
+            return accrued.quantize(Decimal('0.5'))
+
+        return self.calculate_prorated_quota(joining_date, year)
 
     def is_applicable_to(self, employee):
         """Check if this policy applies to a given employee."""
@@ -938,3 +1007,156 @@ class Holiday(models.Model):
     def save(self, *args, **kwargs):
         self.year = self.date.year
         super().save(*args, **kwargs)
+
+
+class StaffAttendance(models.Model):
+    """
+    Staff attendance records with geo-selfie check-in/check-out.
+    Tracks daily attendance with photos, locations, and timestamps.
+    """
+    STATUS_CHOICES = [
+        ('checked_in', 'Checked In'),
+        ('checked_out', 'Checked Out'),
+        ('absent', 'Absent'),
+        ('on_leave', 'On Leave'),
+        ('half_day', 'Half Day'),
+    ]
+
+    SYNC_STATUS_CHOICES = [
+        ('synced', 'Synced'),
+        ('pending', 'Pending'),
+        ('error', 'Error'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name='attendance_records'
+    )
+    date = models.DateField()
+
+    # Check-in details
+    check_in_time = models.DateTimeField(null=True, blank=True)
+    check_in_photo = models.ImageField(
+        upload_to='hr/attendance/checkin/%Y/%m/',
+        null=True,
+        blank=True,
+        help_text="Selfie photo at check-in"
+    )
+    check_in_latitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True
+    )
+    check_in_longitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True
+    )
+    check_in_within_geofence = models.BooleanField(default=True)
+
+    # Check-out details
+    check_out_time = models.DateTimeField(null=True, blank=True)
+    check_out_photo = models.ImageField(
+        upload_to='hr/attendance/checkout/%Y/%m/',
+        null=True,
+        blank=True,
+        help_text="Selfie photo at check-out"
+    )
+    check_out_latitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True
+    )
+    check_out_longitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True
+    )
+    check_out_within_geofence = models.BooleanField(default=True)
+
+    # Calculated fields
+    hours_worked = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Total hours worked (auto-calculated)"
+    )
+
+    # Status
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='checked_in'
+    )
+    sync_status = models.CharField(
+        max_length=20,
+        choices=SYNC_STATUS_CHOICES,
+        default='synced'
+    )
+
+    # Notes/remarks
+    notes = models.TextField(blank=True)
+
+    # Audit
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date', '-check_in_time']
+        unique_together = ['employee', 'date']
+        indexes = [
+            models.Index(fields=['employee', 'date']),
+            models.Index(fields=['date']),
+            models.Index(fields=['status']),
+        ]
+        verbose_name = 'Staff Attendance'
+        verbose_name_plural = 'Staff Attendance Records'
+
+    def __str__(self):
+        return f"{self.employee.full_name} - {self.date}"
+
+    def save(self, *args, **kwargs):
+        """Calculate hours worked before saving."""
+        if self.check_in_time and self.check_out_time:
+            delta = self.check_out_time - self.check_in_time
+            self.hours_worked = Decimal(str(delta.total_seconds() / 3600)).quantize(Decimal('0.01'))
+            self.status = 'checked_out'
+        elif self.check_in_time:
+            self.status = 'checked_in'
+        super().save(*args, **kwargs)
+
+    @property
+    def hours_worked_display(self):
+        """Format hours worked as HH:MM."""
+        if not self.hours_worked:
+            return None
+        hours = int(self.hours_worked)
+        minutes = int((self.hours_worked - hours) * 60)
+        return f"{hours}h {minutes}m"
+
+    @property
+    def check_in_location(self):
+        """Return check-in location as dict."""
+        if self.check_in_latitude and self.check_in_longitude:
+            return {
+                'lat': float(self.check_in_latitude),
+                'lng': float(self.check_in_longitude)
+            }
+        return None
+
+    @property
+    def check_out_location(self):
+        """Return check-out location as dict."""
+        if self.check_out_latitude and self.check_out_longitude:
+            return {
+                'lat': float(self.check_out_latitude),
+                'lng': float(self.check_out_longitude)
+            }
+        return None

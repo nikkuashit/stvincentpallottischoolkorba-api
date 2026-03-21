@@ -68,6 +68,8 @@ INSTALLED_APPS = [
     "workflows",  # Request & approval workflow system
     "notifications",  # Notification system
     "hr",  # HR & Leave management system
+    "transport",  # Transport management (vehicles, routes, stops)
+    "fees",  # Fee management (fee structures, payments, receipts)
 ]
 
 SITE_ID = 1
@@ -190,7 +192,7 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ),
-    "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.coreapi.AutoSchema",
+    "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.openapi.AutoSchema",
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
 }

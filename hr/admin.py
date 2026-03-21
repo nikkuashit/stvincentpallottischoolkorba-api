@@ -102,9 +102,10 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
 class LeaveTypeAdmin(admin.ModelAdmin):
     list_display = [
         'name', 'code', 'is_paid', 'requires_document',
-        'min_days_notice', 'max_consecutive_days', 'color_display', 'is_active'
+        'min_days_notice', 'max_consecutive_days', 'color_display',
+        'is_applyable', 'is_active'
     ]
-    list_filter = ['is_paid', 'requires_document', 'applicable_gender', 'is_active']
+    list_filter = ['is_paid', 'requires_document', 'applicable_gender', 'is_applyable', 'is_active']
     search_fields = ['name', 'code']
     ordering = ['display_order', 'name']
 

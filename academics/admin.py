@@ -2,12 +2,36 @@
 
 from django.contrib import admin
 from .models import (
-    AcademicYear, Class, Student, Parent, StudentParent, Subject, Course,
+    GradeType, AcademicYear, Grade, Section, Student, Parent, StudentParent, Subject, Course,
     # Attendance models
     AttendanceSession, Attendance, AttendanceSettings,
     # Grades models
     ExamType, Exam, GradingScale, GradeRange, StudentMark, MarkAuditLog,
 )
+
+
+@admin.register(GradeType)
+class GradeTypeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'number', 'short_name', 'category', 'display_order', 'is_active']
+    list_filter = ['category', 'is_active']
+    search_fields = ['name', 'short_name', 'description']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order', 'number']
+    fieldsets = (
+        (None, {
+            'fields': ('number', 'name', 'short_name', 'category')
+        }),
+        ('Display Settings', {
+            'fields': ('display_order', 'description')
+        }),
+        ('Status', {
+            'fields': ('is_active',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(AcademicYear)
@@ -19,13 +43,22 @@ class AcademicYearAdmin(admin.ModelAdmin):
     date_hierarchy = 'start_date'
 
 
-@admin.register(Class)
-class ClassAdmin(admin.ModelAdmin):
-    list_display = ['name', 'grade', 'section', 'class_teacher', 'room_number', 'capacity', 'is_active']
-    list_filter = ['grade', 'is_active']
-    search_fields = ['name', 'section', 'room_number']
+@admin.register(Grade)
+class GradeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'number', 'academic_year', 'is_active', 'created_at']
+    list_filter = ['academic_year', 'is_active']
+    search_fields = ['name']
     readonly_fields = ['created_at', 'updated_at']
-    ordering = ['grade', 'section']
+    ordering = ['academic_year', 'number']
+
+
+@admin.register(Section)
+class SectionAdmin(admin.ModelAdmin):
+    list_display = ['full_name', 'grade', 'class_teacher', 'capacity', 'current_strength', 'academic_year', 'is_active']
+    list_filter = ['grade', 'academic_year', 'is_active']
+    search_fields = ['name', 'grade__name', 'room_number']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['grade', 'name']
 
 
 class StudentParentInline(admin.TabularInline):
@@ -36,8 +69,8 @@ class StudentParentInline(admin.TabularInline):
 
 @admin.register(Student)
 class StudentAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'admission_number', 'current_class', 'status', 'admission_date']
-    list_filter = ['status', 'gender', 'current_class']
+    list_display = ['full_name', 'admission_number', 'section_name', 'status', 'admission_date']
+    list_filter = ['status', 'gender', 'current_section__grade', 'current_section']
     search_fields = ['first_name', 'last_name', 'admission_number', 'email']
     readonly_fields = ['created_at', 'updated_at']
     date_hierarchy = 'admission_date'
@@ -46,6 +79,10 @@ class StudentAdmin(admin.ModelAdmin):
     def full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}"
     full_name.short_description = 'Name'
+
+    def section_name(self, obj):
+        return obj.current_section.full_name if obj.current_section else '-'
+    section_name.short_description = 'Section'
 
 
 @admin.register(Parent)
@@ -78,9 +115,9 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ['subject', 'class_assigned', 'teacher', 'academic_year', 'is_active']
+    list_display = ['subject', 'section', 'teacher', 'academic_year', 'is_active']
     list_filter = ['is_active', 'academic_year']
-    search_fields = ['subject__name', 'class_assigned__name', 'teacher__user__first_name']
+    search_fields = ['subject__name', 'section__name', 'teacher__user__first_name']
     readonly_fields = ['created_at', 'updated_at']
 
 
@@ -105,8 +142,8 @@ class AttendanceSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(Attendance)
 class AttendanceAdmin(admin.ModelAdmin):
-    list_display = ['student', 'class_assigned', 'date', 'session', 'status', 'marked_by']
-    list_filter = ['status', 'date', 'class_assigned', 'session']
+    list_display = ['student', 'section', 'date', 'session', 'status', 'marked_by']
+    list_filter = ['status', 'date', 'section', 'session']
     search_fields = ['student__first_name', 'student__last_name', 'student__admission_number']
     readonly_fields = ['created_at', 'updated_at']
     date_hierarchy = 'date'
@@ -151,9 +188,9 @@ class GradeRangeAdmin(admin.ModelAdmin):
 
 @admin.register(Exam)
 class ExamAdmin(admin.ModelAdmin):
-    list_display = ['name', 'exam_type', 'class_assigned', 'subject', 'academic_year', 'max_marks', 'is_published', 'is_locked']
+    list_display = ['name', 'exam_type', 'section', 'subject', 'academic_year', 'max_marks', 'is_published', 'is_locked']
     list_filter = ['exam_type', 'academic_year', 'is_published', 'is_locked', 'is_active']
-    search_fields = ['name', 'class_assigned__name', 'subject__name']
+    search_fields = ['name', 'section__name', 'subject__name']
     readonly_fields = ['created_at', 'updated_at']
     date_hierarchy = 'exam_date'
 

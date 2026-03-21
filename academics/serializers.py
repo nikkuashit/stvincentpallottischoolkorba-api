@@ -9,15 +9,17 @@ from django.db import transaction, models as django_models
 from accounts.models import UserProfile
 from accounts.utils import generate_username, generate_password
 from .models import (
-    AcademicYear, Class, Student, Parent, StudentParent, Subject, Course,
+    AcademicYear, Student, Parent, StudentParent, Subject, Course,
     AttendanceSession, Attendance, AttendanceSettings,
     ExamType, Exam, GradingScale, GradeRange, StudentMark, MarkAuditLog,
     # Phase A models
-    SchoolSettings, Grade, Section,
+    GradeType, SchoolSettings, Grade, Section,
     # Phase B models
     StudentEnrollment, StudentPhoto,
     # Phase C models
-    ClassTeacher, SubjectTeacher
+    ClassTeacher, SubjectTeacher,
+    # Room Layout & Seating
+    RoomLayout, Desk, SeatingAssignment,
 )
 
 
@@ -32,43 +34,53 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class ClassSerializer(serializers.ModelSerializer):
-    """Serializer for Class model"""
-    class_teacher_name = serializers.SerializerMethodField()
-    student_count = serializers.SerializerMethodField()
+class GradeTypeSerializer(serializers.ModelSerializer):
+    """Serializer for GradeType model - admin-configurable grade types"""
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    grades_count = serializers.SerializerMethodField()
 
     class Meta:
-        model = Class
+        model = GradeType
         fields = [
-            'id', 'name', 'grade', 'section', 'class_teacher',
-            'class_teacher_name', 'room_number', 'capacity',
-            'student_count', 'is_active', 'created_at', 'updated_at'
+            'id', 'number', 'name', 'short_name', 'category', 'category_display',
+            'display_order', 'description', 'is_active', 'grades_count',
+            'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
-    def get_class_teacher_name(self, obj):
-        if obj.class_teacher:
-            return obj.class_teacher.full_name
-        return None
+    def get_grades_count(self, obj):
+        """Count of Grade instances using this GradeType"""
+        return obj.grades.count()
 
-    def get_student_count(self, obj):
-        return obj.students.filter(status='active').count()
+
+class GradeTypeListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for listing grade types (for dropdowns)"""
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = GradeType
+        fields = [
+            'id', 'number', 'name', 'short_name', 'category', 'category_display',
+            'display_order', 'is_active'
+        ]
 
 
 class StudentListSerializer(serializers.ModelSerializer):
     """Simplified serializer for listing students"""
-    class_name = serializers.CharField(source='current_class.name', read_only=True)
+    section_name = serializers.CharField(source='current_section.full_name', read_only=True)
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
     full_name = serializers.SerializerMethodField()
     username = serializers.SerializerMethodField()
+    current_photo = serializers.SerializerMethodField()
+    photo_pending_approval = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
         fields = [
             'id', 'admission_number', 'roll_number', 'first_name', 'last_name',
-            'full_name', 'username', 'current_class', 'class_name',
+            'full_name', 'username', 'current_section', 'section_name',
             'academic_year', 'academic_year_name', 'gender', 'status',
-            'photo', 'created_at'
+            'photo', 'current_photo', 'photo_pending_approval', 'created_at'
         ]
 
     def get_full_name(self, obj):
@@ -79,24 +91,51 @@ class StudentListSerializer(serializers.ModelSerializer):
             return obj.user_profile.user.username
         return None
 
+    def get_photo_pending_approval(self, obj):
+        """Check if student has a photo pending approval"""
+        return obj.photos.filter(status='pending').exists()
+
+    def get_current_photo(self, obj):
+        """Return current approved photo information"""
+        photo = obj.photos.filter(is_current=True, status='approved').first()
+        if not photo:
+            return None
+
+        request = self.context.get('request')
+        image_url = None
+        if photo.image:
+            if request:
+                image_url = request.build_absolute_uri(photo.image.url)
+            else:
+                image_url = photo.image.url
+
+        return {
+            'id': str(photo.id),
+            'image_url': image_url,
+        }
+
 
 class StudentDetailSerializer(serializers.ModelSerializer):
     """Detailed serializer for student with all fields"""
-    class_name = serializers.CharField(source='current_class.name', read_only=True)
+    section_name = serializers.CharField(source='current_section.full_name', read_only=True)
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
     full_name = serializers.SerializerMethodField()
     username = serializers.SerializerMethodField()
     email = serializers.SerializerMethodField()
     must_change_password = serializers.SerializerMethodField()
+    current_photo = serializers.SerializerMethodField()
+    has_current_photo = serializers.SerializerMethodField()
+    photo_pending_approval = serializers.SerializerMethodField()
 
     class Meta:
         model = Student
         fields = [
             'id', 'admission_number', 'roll_number', 'first_name', 'last_name',
             'full_name', 'username', 'email', 'date_of_birth', 'gender',
-            'phone', 'current_class', 'class_name', 'academic_year', 'academic_year_name',
+            'phone', 'current_section', 'section_name', 'academic_year', 'academic_year_name',
             'address_line1', 'address_line2', 'city', 'state', 'country', 'postal_code',
-            'admission_date', 'blood_group', 'photo', 'status',
+            'admission_date', 'blood_group', 'photo', 'current_photo',
+            'has_current_photo', 'photo_pending_approval', 'status',
             'must_change_password', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -118,6 +157,34 @@ class StudentDetailSerializer(serializers.ModelSerializer):
         if obj.user_profile:
             return obj.user_profile.must_change_password
         return False
+
+    def get_has_current_photo(self, obj):
+        """Check if student has an approved current photo"""
+        return obj.photos.filter(is_current=True, status='approved').exists()
+
+    def get_photo_pending_approval(self, obj):
+        """Check if student has a photo pending approval"""
+        return obj.photos.filter(status='pending').exists()
+
+    def get_current_photo(self, obj):
+        """Return current approved photo information"""
+        photo = obj.photos.filter(is_current=True, status='approved').first()
+        if not photo:
+            return None
+
+        request = self.context.get('request')
+        image_url = None
+        if photo.image:
+            if request:
+                image_url = request.build_absolute_uri(photo.image.url)
+            else:
+                image_url = photo.image.url
+
+        return {
+            'id': str(photo.id),
+            'image_url': image_url,
+            'uploaded_at': photo.uploaded_at.isoformat() if photo.uploaded_at else None,
+        }
 
 
 def get_current_academic_year():
@@ -171,8 +238,8 @@ class StudentCreateSerializer(serializers.Serializer):
     admission_number = serializers.CharField(max_length=50)
     admission_date = serializers.DateField()
 
-    # Class and Session
-    current_class = serializers.PrimaryKeyRelatedField(queryset=Class.objects.all())
+    # Section and Session
+    current_section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.all())
     academic_year = serializers.PrimaryKeyRelatedField(
         queryset=AcademicYear.objects.all(),
         required=False,
@@ -252,7 +319,7 @@ class StudentCreateSerializer(serializers.Serializer):
         # Create Student record
         student = Student.objects.create(
             user_profile=profile,
-            current_class=validated_data['current_class'],
+            current_section=validated_data['current_section'],
             academic_year=academic_year,
             admission_number=validated_data['admission_number'],
             roll_number=validated_data.get('roll_number', ''),
@@ -287,12 +354,12 @@ class StudentUpdateSerializer(serializers.Serializer):
     date_of_birth = serializers.DateField(required=False)
     gender = serializers.ChoiceField(choices=['male', 'female', 'other'], required=False)
 
-    # Class and Session
-    current_class = serializers.PrimaryKeyRelatedField(
-        queryset=Class.objects.all(), required=False
+    # Section and Session
+    current_section = serializers.PrimaryKeyRelatedField(
+        queryset=Section.objects.all(), required=False, allow_null=True
     )
     academic_year = serializers.PrimaryKeyRelatedField(
-        queryset=AcademicYear.objects.all(), required=False
+        queryset=AcademicYear.objects.all(), required=False, allow_null=True
     )
 
     roll_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -318,7 +385,7 @@ class StudentUpdateSerializer(serializers.Serializer):
         """Update student and related user/profile"""
         # Update student fields
         for field in ['first_name', 'last_name', 'date_of_birth', 'gender',
-                      'current_class', 'academic_year', 'roll_number', 'email',
+                      'current_section', 'academic_year', 'roll_number', 'email',
                       'phone', 'address_line1', 'address_line2', 'city', 'state',
                       'country', 'postal_code', 'blood_group', 'status']:
             if field in validated_data:
@@ -362,7 +429,7 @@ class StudentUpdateSerializer(serializers.Serializer):
 
 class StudentCreateResponseSerializer(serializers.ModelSerializer):
     """Response serializer for student creation with generated credentials"""
-    class_name = serializers.CharField(source='current_class.name', read_only=True)
+    section_name = serializers.CharField(source='current_section.full_name', read_only=True)
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
     full_name = serializers.SerializerMethodField()
     username = serializers.SerializerMethodField()
@@ -374,7 +441,7 @@ class StudentCreateResponseSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'admission_number', 'roll_number', 'first_name', 'last_name',
             'full_name', 'username', 'generated_password', 'email',
-            'current_class', 'class_name', 'academic_year', 'academic_year_name',
+            'current_section', 'section_name', 'academic_year', 'academic_year_name',
             'gender', 'status', 'must_change_password', 'created_at'
         ]
 
@@ -431,7 +498,7 @@ class SubjectSerializer(serializers.ModelSerializer):
 
 class CourseSerializer(serializers.ModelSerializer):
     """Serializer for Course model"""
-    class_name = serializers.CharField(source='class_assigned.name', read_only=True)
+    section_name = serializers.CharField(source='section.full_name', read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     teacher_name = serializers.SerializerMethodField()
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
@@ -439,7 +506,7 @@ class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
         fields = [
-            'id', 'class_assigned', 'class_name', 'subject', 'subject_name',
+            'id', 'section', 'section_name', 'subject', 'subject_name',
             'teacher', 'teacher_name', 'academic_year', 'academic_year_name',
             'is_active', 'created_at', 'updated_at'
         ]
@@ -470,7 +537,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
     """Serializer for Attendance model"""
     student_name = serializers.SerializerMethodField()
     student_roll_no = serializers.CharField(source='student.roll_number', read_only=True)
-    class_name = serializers.CharField(source='class_assigned.name', read_only=True)
+    section_name = serializers.CharField(source='section.full_name', read_only=True)
     session_name = serializers.CharField(source='session.name', read_only=True)
     marked_by_name = serializers.SerializerMethodField()
 
@@ -478,7 +545,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
         model = Attendance
         fields = [
             'id', 'student', 'student_name', 'student_roll_no',
-            'class_assigned', 'class_name', 'academic_year',
+            'section', 'section_name', 'academic_year',
             'session', 'session_name', 'date', 'status', 'remarks',
             'marked_by', 'marked_by_name', 'created_at', 'updated_at'
         ]
@@ -498,7 +565,7 @@ class AttendanceCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attendance
         fields = [
-            'student', 'class_assigned', 'academic_year',
+            'student', 'section', 'academic_year',
             'session', 'date', 'status', 'remarks'
         ]
 
@@ -522,14 +589,14 @@ class BulkAttendanceRecordSerializer(serializers.Serializer):
 
 class BulkAttendanceSerializer(serializers.Serializer):
     """Serializer for bulk attendance marking"""
-    class_id = serializers.UUIDField()
+    section_id = serializers.UUIDField()
     date = serializers.DateField()
     session_id = serializers.UUIDField(required=False, allow_null=True)
     attendance_records = BulkAttendanceRecordSerializer(many=True)
 
-    def validate_class_id(self, value):
-        if not Class.objects.filter(id=value).exists():
-            raise serializers.ValidationError("Class not found")
+    def validate_section_id(self, value):
+        if not Section.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Section not found")
         return value
 
     def validate_session_id(self, value):
@@ -635,7 +702,7 @@ class GradingScaleSerializer(serializers.ModelSerializer):
 class ExamListSerializer(serializers.ModelSerializer):
     """Serializer for listing exams"""
     exam_type_name = serializers.CharField(source='exam_type.name', read_only=True)
-    class_name = serializers.CharField(source='class_assigned.name', read_only=True)
+    section_name = serializers.CharField(source='section.full_name', read_only=True)
     subject_name = serializers.CharField(source='subject.name', read_only=True)
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
     marks_entered_count = serializers.SerializerMethodField()
@@ -646,7 +713,7 @@ class ExamListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'exam_type', 'exam_type_name',
             'academic_year', 'academic_year_name',
-            'class_assigned', 'class_name', 'subject', 'subject_name',
+            'section', 'section_name', 'subject', 'subject_name',
             'max_marks', 'passing_marks', 'exam_date',
             'is_published', 'is_locked', 'is_active',
             'marks_entered_count', 'total_students',
@@ -658,7 +725,7 @@ class ExamListSerializer(serializers.ModelSerializer):
         return obj.marks.exclude(marks_obtained__isnull=True).count()
 
     def get_total_students(self, obj):
-        return obj.class_assigned.students.filter(status='active').count()
+        return obj.section.students.filter(status='active').count()
 
 
 class ExamDetailSerializer(ExamListSerializer):
@@ -678,20 +745,20 @@ class ExamCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exam
         fields = [
-            'exam_type', 'academic_year', 'class_assigned', 'subject',
+            'exam_type', 'academic_year', 'section', 'subject',
             'name', 'max_marks', 'passing_marks', 'exam_date'
         ]
 
     def validate(self, data):
-        # Check for existing exam with same type/year/class/subject
+        # Check for existing exam with same type/year/section/subject
         if Exam.objects.filter(
             exam_type=data['exam_type'],
             academic_year=data['academic_year'],
-            class_assigned=data['class_assigned'],
+            section=data['section'],
             subject=data['subject']
         ).exists():
             raise serializers.ValidationError(
-                "An exam with this type, year, class, and subject already exists"
+                "An exam with this type, year, section, and subject already exists"
             )
         return data
 
@@ -915,8 +982,8 @@ class StudentAdmissionSerializer(serializers.Serializer):
     admission_number = serializers.CharField(max_length=50)
     admission_date = serializers.DateField()
 
-    # Class and Session
-    current_class = serializers.PrimaryKeyRelatedField(queryset=Class.objects.all())
+    # Section and Session
+    current_section = serializers.PrimaryKeyRelatedField(queryset=Section.objects.all())
     academic_year = serializers.PrimaryKeyRelatedField(
         queryset=AcademicYear.objects.all(),
         required=False,
@@ -1017,7 +1084,7 @@ class StudentAdmissionSerializer(serializers.Serializer):
         # Create Student record
         student = Student.objects.create(
             user_profile=student_profile,
-            current_class=validated_data['current_class'],
+            current_section=validated_data['current_section'],
             academic_year=academic_year,
             admission_number=validated_data['admission_number'],
             roll_number=validated_data.get('roll_number', ''),
@@ -1141,7 +1208,7 @@ class StudentAdmissionSerializer(serializers.Serializer):
 
 class StudentAdmissionResponseSerializer(serializers.ModelSerializer):
     """Response serializer for student admission with all created credentials"""
-    class_name = serializers.CharField(source='current_class.name', read_only=True)
+    section_name = serializers.CharField(source='current_section.full_name', read_only=True)
     academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
     full_name = serializers.SerializerMethodField()
     student_credentials = serializers.SerializerMethodField()
@@ -1151,7 +1218,7 @@ class StudentAdmissionResponseSerializer(serializers.ModelSerializer):
         model = Student
         fields = [
             'id', 'admission_number', 'roll_number', 'first_name', 'last_name',
-            'full_name', 'email', 'current_class', 'class_name',
+            'full_name', 'email', 'current_section', 'section_name',
             'academic_year', 'academic_year_name', 'gender', 'status',
             'student_credentials', 'parent_credentials', 'created_at'
         ]
@@ -1211,7 +1278,7 @@ class SchoolSettingsUpdateSerializer(serializers.ModelSerializer):
         model = None  # Placeholder - replace with SchoolSettings model
         fields = [
             'admission_number_prefix', 'current_academic_year',
-            'default_section_capacity', 'roll_number_sort_by',
+            'roll_number_sort_by',
             'normalize_special_characters', 'allow_mid_session_roll_change'
         ]
 
@@ -1227,17 +1294,6 @@ class SchoolSettingsUpdateSerializer(serializers.ModelSerializer):
             )
         return value.upper()
 
-    def validate_default_section_capacity(self, value):
-        """Validate section capacity"""
-        if value < 1:
-            raise serializers.ValidationError(
-                "Section capacity must be at least 1"
-            )
-        if value > 200:
-            raise serializers.ValidationError(
-                "Section capacity cannot exceed 200"
-            )
-        return value
 
 
 class AcademicYearListSerializer(serializers.ModelSerializer):
@@ -1361,14 +1417,21 @@ class GradeListSerializer(serializers.ModelSerializer):
     """Minimal serializer for grade list views"""
     section_count = serializers.SerializerMethodField()
     student_count = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
+    subject_count = serializers.SerializerMethodField()
 
     class Meta:
-        # model = Grade  # Uncomment when model is created
-        model = None  # Placeholder - replace with Grade model
+        model = Grade
         fields = [
-            'id', 'number', 'name', 'display_name',
-            'section_count', 'student_count', 'is_active'
+            'id', 'number', 'name', 'description', 'academic_year', 'academic_year_name',
+            'section_count', 'student_count', 'subject_count', 'display_order', 'is_active',
+            'created_at', 'updated_at'
         ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_subject_count(self, obj):
+        """Count subjects for this grade"""
+        return obj.subjects.count()
 
     def get_section_count(self, obj):
         """Count active sections for this grade"""
@@ -1391,14 +1454,14 @@ class GradeDetailSerializer(serializers.ModelSerializer):
     total_capacity = serializers.SerializerMethodField()
     total_students = serializers.SerializerMethodField()
     capacity_utilization = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
 
     class Meta:
-        # model = Grade  # Uncomment when model is created
-        model = None  # Placeholder - replace with Grade model
+        model = Grade
         fields = [
-            'id', 'number', 'name', 'display_name', 'subjects',
-            'sections', 'section_count', 'total_capacity',
-            'total_students', 'capacity_utilization',
+            'id', 'number', 'name', 'description', 'academic_year', 'academic_year_name',
+            'subjects', 'sections', 'section_count', 'total_capacity',
+            'total_students', 'capacity_utilization', 'display_order',
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -1413,9 +1476,9 @@ class GradeDetailSerializer(serializers.ModelSerializer):
         return obj.sections.filter(is_active=True).count()
 
     def get_total_capacity(self, obj):
-        """Sum capacity across all sections"""
+        """Sum capacity across all sections (only those with room layouts)"""
         sections = obj.sections.filter(is_active=True)
-        return sum(s.capacity for s in sections if s.capacity)
+        return sum(s.capacity for s in sections if s.capacity is not None)
 
     def get_total_students(self, obj):
         """Count students across all sections"""
@@ -1444,52 +1507,55 @@ class GradeCreateUpdateSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        # model = Grade  # Uncomment when model is created
-        model = None  # Placeholder - replace with Grade model
-        fields = ['number', 'name', 'display_name', 'subjects', 'is_active']
+        model = Grade
+        fields = ['number', 'name', 'description', 'academic_year', 'subjects', 'display_order', 'is_active']
 
     def validate_number(self, value):
-        """Validate grade number (1-12)"""
-        if value < 1 or value > 12:
+        """Validate grade number against existing GradeTypes"""
+        from .models import GradeType
+        if not GradeType.objects.filter(number=value, is_active=True).exists():
+            valid_numbers = list(GradeType.objects.filter(is_active=True).order_by('number').values_list('number', flat=True))
             raise serializers.ValidationError(
-                "Grade number must be between 1 and 12"
+                f"Invalid grade number. Valid options are: {valid_numbers}"
             )
         return value
 
     def validate(self, data):
-        """Check for duplicate grade numbers"""
+        """Check for duplicate grade numbers within same academic year"""
         number = data.get('number')
-        if number:
-            # TODO: Uncomment when Grade model is created
-            # from .models import Grade
-            # existing = Grade.objects.filter(number=number)
-            # if self.instance:
-            #     existing = existing.exclude(pk=self.instance.pk)
-            # if existing.exists():
-            #     raise serializers.ValidationError({
-            #         'number': f"Grade {number} already exists"
-            #     })
-            pass
+        academic_year = data.get('academic_year')
+        if number and academic_year:
+            existing = Grade.objects.filter(number=number, academic_year=academic_year)
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'number': f"Grade {number} already exists for this academic year"
+                })
         return data
 
 
 class SectionListSerializer(serializers.ModelSerializer):
     """Minimal serializer for section list views"""
-    grade_name = serializers.CharField(source='grade.display_name', read_only=True)
+    grade_name = serializers.CharField(source='grade.name', read_only=True)
     grade_number = serializers.IntegerField(source='grade.number', read_only=True)
     full_name = serializers.SerializerMethodField()
     class_teacher_name = serializers.SerializerMethodField()
     student_count = serializers.SerializerMethodField()
+    capacity = serializers.SerializerMethodField()
     capacity_utilization = serializers.SerializerMethodField()
 
     class Meta:
-        # model = Section  # Uncomment when model is created
-        model = None  # Placeholder - replace with Section model
+        model = Section
         fields = [
             'id', 'grade', 'grade_number', 'grade_name', 'name',
             'full_name', 'capacity', 'class_teacher', 'class_teacher_name',
             'student_count', 'capacity_utilization', 'academic_year', 'is_active'
         ]
+
+    def get_capacity(self, obj):
+        """Return capacity from room layout (None if no layout assigned)"""
+        return obj.capacity
 
     def get_full_name(self, obj):
         """Return full section name (e.g., '5A')"""
@@ -1525,12 +1591,12 @@ class SectionDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     student_count = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
+    capacity = serializers.SerializerMethodField()
     capacity_utilization = serializers.SerializerMethodField()
     capacity_status = serializers.SerializerMethodField()
 
     class Meta:
-        # model = Section  # Uncomment when model is created
-        model = None  # Placeholder - replace with Section model
+        model = Section
         fields = [
             'id', 'grade', 'grade_info', 'name', 'full_name',
             'capacity', 'class_teacher', 'class_teacher_info',
@@ -1540,6 +1606,10 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def get_capacity(self, obj):
+        """Return capacity from room layout (None if no layout assigned)"""
+        return obj.capacity
+
     def get_full_name(self, obj):
         return f"{obj.grade.number}{obj.name}"
 
@@ -1548,8 +1618,7 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         return {
             'id': str(obj.grade.id),
             'number': obj.grade.number,
-            'name': obj.grade.name,
-            'display_name': obj.grade.display_name
+            'name': obj.grade.name
         }
 
     def get_class_teacher_info(self, obj):
@@ -1598,37 +1667,19 @@ class SectionCreateUpdateSerializer(serializers.ModelSerializer):
     """Create/Update serializer for Section with validation"""
 
     class Meta:
-        # model = Section  # Uncomment when model is created
-        model = None  # Placeholder - replace with Section model
+        model = Section
         fields = [
-            'grade', 'name', 'capacity', 'class_teacher',
-            'room_number', 'academic_year', 'is_active'
+            'grade', 'name', 'class_teacher',
+            'room_number', 'room_layout', 'academic_year', 'is_active'
         ]
 
     def validate_name(self, value):
-        """Validate section name (A-E)"""
+        """Validate section name (A-Z)"""
         if not value.isalpha() or len(value) != 1:
             raise serializers.ValidationError(
-                "Section name must be a single letter (A-E)"
+                "Section name must be a single letter (A-Z)"
             )
         value = value.upper()
-        if value not in ['A', 'B', 'C', 'D', 'E']:
-            raise serializers.ValidationError(
-                "Section name must be between A and E"
-            )
-        return value
-
-    def validate_capacity(self, value):
-        """Validate section capacity"""
-        if value is not None:
-            if value < 1:
-                raise serializers.ValidationError(
-                    "Section capacity must be at least 1"
-                )
-            if value > 200:
-                raise serializers.ValidationError(
-                    "Section capacity cannot exceed 200"
-                )
         return value
 
     def validate(self, data):
@@ -1638,56 +1689,276 @@ class SectionCreateUpdateSerializer(serializers.ModelSerializer):
         academic_year = data.get('academic_year')
 
         if grade and name and academic_year:
-            # TODO: Uncomment when Section model is created
-            # from .models import Section
-            # existing = Section.objects.filter(
-            #     grade=grade,
-            #     name=name,
-            #     academic_year=academic_year
-            # )
-            # if self.instance:
-            #     existing = existing.exclude(pk=self.instance.pk)
-            #
-            # if existing.exists():
-            #     raise serializers.ValidationError(
-            #         f"Section {name} already exists for Grade {grade.number} in academic year {academic_year.name}"
-            #     )
-            pass
+            existing = Section.objects.filter(
+                grade=grade,
+                name=name,
+                academic_year=academic_year
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
 
-        # Check if section is at capacity when updating
-        if self.instance and 'capacity' in data:
-            new_capacity = data['capacity']
-            current_students = self.instance.students.filter(status='active').count()
-
-            if new_capacity and new_capacity < current_students:
-                raise serializers.ValidationError({
-                    'capacity': f"Cannot set capacity to {new_capacity}. "
-                               f"Section currently has {current_students} students."
-                })
+            if existing.exists():
+                raise serializers.ValidationError(
+                    f"Section {name} already exists for Grade {grade.number} in academic year {academic_year.name}"
+                )
 
         return data
 
     def validate_class_teacher(self, value):
         """Validate that class teacher is not already assigned to another section"""
         if value:
-            # TODO: Uncomment when Section model is created
-            # from .models import Section
             # Check if teacher is already a class teacher for another section
-            # existing_assignment = Section.objects.filter(
-            #     class_teacher=value,
-            #     is_active=True
-            # )
-            # if self.instance:
-            #     existing_assignment = existing_assignment.exclude(pk=self.instance.pk)
-            #
-            # if existing_assignment.exists():
-            #     section = existing_assignment.first()
-            #     raise serializers.ValidationError(
-            #         f"This teacher is already the class teacher for Section "
-            #         f"{section.grade.number}{section.name}"
-            #     )
-            pass
+            existing_assignment = Section.objects.filter(
+                class_teacher=value,
+                is_active=True
+            )
+            if self.instance:
+                existing_assignment = existing_assignment.exclude(pk=self.instance.pk)
 
+            if existing_assignment.exists():
+                section = existing_assignment.first()
+                raise serializers.ValidationError(
+                    f"This teacher is already the class teacher for Section "
+                    f"{section.grade.number}{section.name}"
+                )
+
+        return value
+
+
+# =============================================================================
+# GRADE AND SECTION UNIFIED SERIALIZERS (For ViewSets)
+# =============================================================================
+
+class GradeSerializer(serializers.ModelSerializer):
+    """
+    Unified Grade serializer for ViewSet operations.
+    Handles both read (list/detail) and write (create/update) operations.
+    """
+    subjects = SubjectSerializer(many=True, read_only=True)
+    subject_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Subject.objects.all(),
+        many=True,
+        required=False,
+        write_only=True,
+        source='subjects'
+    )
+    sections = serializers.SerializerMethodField()
+    section_count = serializers.SerializerMethodField()
+    student_count = serializers.SerializerMethodField()
+    subject_count = serializers.SerializerMethodField()
+    total_capacity = serializers.SerializerMethodField()
+    capacity_utilization = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
+
+    class Meta:
+        model = Grade
+        fields = [
+            'id', 'number', 'name', 'description', 'academic_year', 'academic_year_name',
+            'subjects', 'subject_ids', 'sections', 'section_count', 'student_count',
+            'subject_count', 'total_capacity', 'capacity_utilization',
+            'display_order', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_sections(self, obj):
+        """Get all active sections for this grade"""
+        sections = obj.sections.filter(is_active=True).order_by('name')
+        return SectionListSerializer(sections, many=True).data
+
+    def get_section_count(self, obj):
+        return obj.sections.filter(is_active=True).count()
+
+    def get_student_count(self, obj):
+        """Count students across all sections"""
+        total = 0
+        for section in obj.sections.filter(is_active=True):
+            total += section.students.filter(status='active').count()
+        return total
+
+    def get_subject_count(self, obj):
+        return obj.subjects.count()
+
+    def get_total_capacity(self, obj):
+        """Sum capacity across all sections (only those with room layouts)"""
+        sections = obj.sections.filter(is_active=True)
+        return sum(s.capacity for s in sections if s.capacity is not None)
+
+    def get_capacity_utilization(self, obj):
+        """Calculate percentage of capacity used"""
+        total_capacity = self.get_total_capacity(obj)
+        total_students = self.get_student_count(obj)
+        if total_capacity == 0:
+            return 0.0
+        return round((total_students / total_capacity) * 100, 2)
+
+    def validate_number(self, value):
+        """Validate grade number against existing GradeTypes"""
+        from .models import GradeType
+        if not GradeType.objects.filter(number=value, is_active=True).exists():
+            valid_numbers = list(GradeType.objects.filter(is_active=True).order_by('number').values_list('number', flat=True))
+            raise serializers.ValidationError(
+                f"Invalid grade number. Valid options are: {valid_numbers}"
+            )
+        return value
+
+    def validate(self, data):
+        """Check for duplicate grade numbers within same academic year"""
+        number = data.get('number')
+        academic_year = data.get('academic_year')
+        if number and academic_year:
+            existing = Grade.objects.filter(number=number, academic_year=academic_year)
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError({
+                    'number': f"Grade {number} already exists for this academic year"
+                })
+        return data
+
+
+class SectionSerializer(serializers.ModelSerializer):
+    """
+    Unified Section serializer for ViewSet operations.
+    Handles both read (list/detail) and write (create/update) operations.
+    """
+    grade_info = serializers.SerializerMethodField()
+    grade_name = serializers.CharField(source='grade.name', read_only=True)
+    grade_number = serializers.IntegerField(source='grade.number', read_only=True)
+    class_teacher_info = serializers.SerializerMethodField()
+    class_teacher_name = serializers.SerializerMethodField()
+    academic_year_name = serializers.CharField(source='academic_year.name', read_only=True)
+    full_name = serializers.SerializerMethodField()
+    student_count = serializers.SerializerMethodField()
+    capacity = serializers.SerializerMethodField()
+    capacity_utilization = serializers.SerializerMethodField()
+    capacity_status = serializers.SerializerMethodField()
+    room_layout_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Section
+        fields = [
+            'id', 'grade', 'grade_info', 'grade_name', 'grade_number',
+            'name', 'full_name', 'capacity', 'room_number',
+            'room_layout', 'room_layout_info',
+            'class_teacher', 'class_teacher_info', 'class_teacher_name',
+            'academic_year', 'academic_year_name',
+            'student_count', 'capacity_utilization', 'capacity_status',
+            'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_full_name(self, obj):
+        """Return full section name (e.g., '5A')"""
+        return f"{obj.grade.number}{obj.name}"
+
+    def get_capacity(self, obj):
+        """Return capacity from room layout (None if no layout assigned)"""
+        return obj.capacity
+
+    def get_grade_info(self, obj):
+        """Return nested grade information"""
+        return {
+            'id': str(obj.grade.id),
+            'number': obj.grade.number,
+            'name': obj.grade.name
+        }
+
+    def get_class_teacher_info(self, obj):
+        """Return nested class teacher information"""
+        if not obj.class_teacher:
+            return None
+        return {
+            'id': str(obj.class_teacher.id),
+            'full_name': obj.class_teacher.full_name,
+            'email': obj.class_teacher.user.email if obj.class_teacher.user else None,
+            'phone': obj.class_teacher.phone
+        }
+
+    def get_class_teacher_name(self, obj):
+        """Return class teacher full name"""
+        if obj.class_teacher:
+            return obj.class_teacher.full_name
+        return None
+
+    def get_student_count(self, obj):
+        """Count active students in this section"""
+        return obj.students.filter(status='active').count()
+
+    def get_capacity_utilization(self, obj):
+        """Calculate capacity utilization percentage"""
+        if not obj.capacity or obj.capacity == 0:
+            return 0.0
+        student_count = self.get_student_count(obj)
+        return round((student_count / obj.capacity) * 100, 2)
+
+    def get_capacity_status(self, obj):
+        """Return capacity status (available, full, overcapacity)"""
+        if not obj.capacity:
+            return 'unknown'
+        utilization = self.get_capacity_utilization(obj)
+        if utilization >= 100:
+            return 'full' if utilization == 100 else 'overcapacity'
+        elif utilization >= 90:
+            return 'near_full'
+        else:
+            return 'available'
+
+    def get_room_layout_info(self, obj):
+        """Return nested room layout information"""
+        if not obj.room_layout:
+            return None
+        return {
+            'id': str(obj.room_layout.id),
+            'name': obj.room_layout.name,
+            'rows': obj.room_layout.rows,
+            'columns': obj.room_layout.columns,
+            'total_seats': obj.room_layout.total_seats,
+        }
+
+    def validate_name(self, value):
+        """Validate section name (A-Z)"""
+        if not value.isalpha() or len(value) != 1:
+            raise serializers.ValidationError(
+                "Section name must be a single letter (A-Z)"
+            )
+        return value.upper()
+
+    def validate(self, data):
+        """Validate unique section per grade and academic year"""
+        grade = data.get('grade')
+        name = data.get('name')
+        academic_year = data.get('academic_year')
+
+        if grade and name and academic_year:
+            existing = Section.objects.filter(
+                grade=grade,
+                name=name,
+                academic_year=academic_year
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError(
+                    f"Section {name} already exists for Grade {grade.number} in academic year {academic_year.name}"
+                )
+
+        return data
+
+    def validate_class_teacher(self, value):
+        """Validate that class teacher is not already assigned to another section"""
+        if value:
+            existing_assignment = Section.objects.filter(
+                class_teacher=value,
+                is_active=True
+            )
+            if self.instance:
+                existing_assignment = existing_assignment.exclude(pk=self.instance.pk)
+            if existing_assignment.exists():
+                section = existing_assignment.first()
+                raise serializers.ValidationError(
+                    f"This teacher is already the class teacher for Section "
+                    f"{section.grade.number}{section.name}"
+                )
         return value
 
 
@@ -1809,12 +2080,35 @@ class StudentPhotoUploadSerializer(serializers.ModelSerializer):
 
         # Set uploaded_by from request context
         request = self.context.get('request')
-        if request and hasattr(request.user, 'profile'):
-            validated_data['uploaded_by'] = request.user.profile
+        user_profile = None
+        is_admin = False
 
-        # Set default status to pending
-        validated_data['status'] = 'pending'
-        validated_data['is_current'] = False
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            if hasattr(request.user, 'profile'):
+                user_profile = request.user.profile
+                validated_data['uploaded_by'] = user_profile
+                # Check if user is admin (super_admin or school_admin)
+                is_admin = user_profile.role in ['super_admin', 'school_admin']
+            # Also check if user is superuser
+            if request.user.is_superuser:
+                is_admin = True
+
+        # Auto-approve photos uploaded by admin users
+        if is_admin:
+            validated_data['status'] = 'approved'
+            validated_data['is_current'] = True
+            validated_data['approved_by'] = user_profile
+            # Clear is_current flag on existing photos for this student
+            student = validated_data.get('student')
+            if student:
+                StudentPhoto.objects.filter(
+                    student=student,
+                    is_current=True
+                ).update(is_current=False)
+        else:
+            # Non-admin uploads require approval
+            validated_data['status'] = 'pending'
+            validated_data['is_current'] = False
 
         photo = StudentPhoto.objects.create(**validated_data)
 
@@ -1971,8 +2265,8 @@ class StudentEnrollmentCreateSerializerEnhanced(serializers.ModelSerializer):
                           f"for academic year {academic_year.name}"
             })
 
-        # Check if section has available capacity
-        if section.current_strength >= section.capacity:
+        # Check if section has available capacity (only if room layout is assigned)
+        if section.capacity is not None and section.current_strength >= section.capacity:
             raise serializers.ValidationError({
                 'section': f"Section {section.full_name} is at full capacity "
                           f"({section.current_strength}/{section.capacity})"
@@ -2834,3 +3128,177 @@ class SectionTeachersSerializer(serializers.Serializer):
             'teacher_email': assignment.teacher.user.email if assignment.teacher.user else None,
             'periods_per_week': assignment.periods_per_week,
         } for assignment in subject_assignments]
+
+
+# =============================================================================
+# ROOM LAYOUT & SEATING ARRANGEMENT SERIALIZERS
+# =============================================================================
+
+class DeskSerializer(serializers.ModelSerializer):
+    """Serializer for individual desks in a room layout."""
+    class Meta:
+        model = Desk
+        fields = ['id', 'room_layout', 'row', 'column', 'capacity', 'is_active', 'label']
+        read_only_fields = ['id']
+
+
+class RoomLayoutListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for listing room layouts."""
+    total_seats = serializers.SerializerMethodField()
+    desk_count = serializers.SerializerMethodField()
+    sections_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RoomLayout
+        fields = [
+            'id', 'name', 'rows', 'columns', 'total_seats', 'desk_count',
+            'sections_count', 'description', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_total_seats(self, obj):
+        return obj.total_seats
+
+    def get_desk_count(self, obj):
+        return obj.desk_count
+
+    def get_sections_count(self, obj):
+        return obj.sections.count()
+
+
+class RoomLayoutDetailSerializer(serializers.ModelSerializer):
+    """Detail serializer for room layout with nested desks (read + write)."""
+    desks = DeskSerializer(many=True, read_only=True)
+    total_seats = serializers.SerializerMethodField()
+    desk_count = serializers.SerializerMethodField()
+    sections_count = serializers.SerializerMethodField()
+
+    # Write-only field for creating/updating desks
+    desks_data = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        help_text="Array of desk definitions: [{row, column, capacity, is_active}]"
+    )
+
+    class Meta:
+        model = RoomLayout
+        fields = [
+            'id', 'name', 'rows', 'columns', 'total_seats', 'desk_count',
+            'sections_count', 'description', 'is_active',
+            'desks', 'desks_data',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_total_seats(self, obj):
+        return obj.total_seats
+
+    def get_desk_count(self, obj):
+        return obj.desk_count
+
+    def get_sections_count(self, obj):
+        return obj.sections.count()
+
+    def _create_desks(self, room_layout, desks_data):
+        """Create desks from data array."""
+        desks = []
+        for desk_data in desks_data:
+            desks.append(Desk(
+                room_layout=room_layout,
+                row=desk_data['row'],
+                column=desk_data['column'],
+                capacity=desk_data.get('capacity', 2),
+                is_active=desk_data.get('is_active', True),
+                label=desk_data.get('label', ''),
+            ))
+        Desk.objects.bulk_create(desks)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        desks_data = validated_data.pop('desks_data', None)
+        room_layout = RoomLayout.objects.create(**validated_data)
+
+        if desks_data:
+            self._create_desks(room_layout, desks_data)
+        else:
+            # Auto-generate grid of desks with default capacity
+            desks = []
+            for r in range(room_layout.rows):
+                for c in range(room_layout.columns):
+                    desks.append(Desk(
+                        room_layout=room_layout,
+                        row=r, column=c,
+                        capacity=2, is_active=True,
+                    ))
+            Desk.objects.bulk_create(desks)
+
+        return room_layout
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        desks_data = validated_data.pop('desks_data', None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if desks_data is not None:
+            # Replace all desks — clear seating assignments for affected sections first
+            SeatingAssignment.objects.filter(
+                desk__room_layout=instance
+            ).delete()
+            instance.desks.all().delete()
+            self._create_desks(instance, desks_data)
+
+        return instance
+
+
+class SeatingAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for seating assignments with nested read-only info."""
+    student_info = serializers.SerializerMethodField()
+    desk_info = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SeatingAssignment
+        fields = [
+            'id', 'section', 'desk', 'student', 'position',
+            'student_info', 'desk_info',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_student_info(self, obj):
+        photo_url = None
+        photo = obj.student.photos.filter(is_current=True, status='approved').first()
+        if photo and photo.image:
+            request = self.context.get('request')
+            if request:
+                photo_url = request.build_absolute_uri(photo.image.url)
+            else:
+                photo_url = photo.image.url
+        return {
+            'id': str(obj.student.id),
+            'first_name': obj.student.first_name,
+            'last_name': obj.student.last_name,
+            'roll_number': obj.student.roll_number,
+            'admission_number': obj.student.admission_number,
+            'photo_url': photo_url,
+        }
+
+    def get_desk_info(self, obj):
+        return {
+            'id': str(obj.desk.id),
+            'row': obj.desk.row,
+            'column': obj.desk.column,
+            'capacity': obj.desk.capacity,
+            'label': obj.desk.label,
+        }
+
+
+class SectionSeatingSerializer(serializers.Serializer):
+    """Combined response for section seating view."""
+    section = SectionSerializer()
+    room_layout = RoomLayoutDetailSerializer()
+    seating_assignments = SeatingAssignmentSerializer(many=True)
+    unassigned_students = serializers.ListField(child=serializers.DictField())
