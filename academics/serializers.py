@@ -3283,6 +3283,7 @@ class SeatingAssignmentSerializer(serializers.ModelSerializer):
             'last_name': obj.student.last_name,
             'roll_number': obj.student.roll_number,
             'admission_number': obj.student.admission_number,
+            'gender': obj.student.gender,
             'photo_url': photo_url,
         }
 

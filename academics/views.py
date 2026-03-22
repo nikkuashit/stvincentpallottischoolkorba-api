@@ -2121,6 +2121,7 @@ class SectionViewSet(viewsets.ModelViewSet):
             'last_name': s.last_name,
             'roll_number': s.roll_number,
             'admission_number': s.admission_number,
+            'gender': s.gender,
             'photo_url': get_student_photo_url(s),
         } for s in unassigned]
 
@@ -3420,18 +3421,20 @@ class SeatingAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='auto-assign')
     def auto_assign(self, request):
         """
-        Auto-assign students to desks by roll number order.
+        Auto-assign students to desks with optional constraint-based rules.
 
-        Request body: { "section_id": "<uuid>" }
-
-        Algorithm:
-        1. Get section, validate it has a room_layout
-        2. Get active desks ordered by (row, column)
-        3. Get active students ordered by roll_number
-        4. Delete existing assignments
-        5. Walk desks filling positions 1..capacity with next student
-        6. Return assignments + unassigned students (overflow)
+        Request body:
+        {
+            "section_id": "<uuid>",
+            "constraints": {                       // optional
+                "gender_mode": "none",             // none|same_gender_desk|gender_columns|alternating_rows
+                "gender_priority": "female_first", // female_first|male_first
+                "sort_by": "roll_number"           // roll_number|alphabetical|random
+            }
+        }
         """
+        from .seating_engine import SeatingEngine, StudentData, DeskData
+
         section_id = request.data.get('section_id')
         if not section_id:
             return Response(
@@ -3453,45 +3456,69 @@ class SeatingAssignmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        desks = section.room_layout.desks.filter(
+        # Convert ORM objects to DTOs
+        desks_qs = section.room_layout.desks.filter(
             is_active=True
         ).order_by('row', 'column')
 
-        # Sort students by roll_number (numeric sort where possible)
-        students = list(section.students.filter(status='active'))
-        students.sort(key=lambda s: (
-            int(s.roll_number) if s.roll_number and s.roll_number.isdigit() else 999999,
-            s.roll_number or '',
-            s.last_name,
-        ))
+        students_qs = section.students.filter(status='active')
+
+        students_data = [
+            StudentData(
+                id=str(s.id),
+                roll_number=s.roll_number or '',
+                first_name=s.first_name,
+                last_name=s.last_name,
+                gender=s.gender or 'other',
+            )
+            for s in students_qs
+        ]
+
+        desks_data = [
+            DeskData(
+                id=str(d.id),
+                row=d.row,
+                column=d.column,
+                capacity=d.capacity,
+            )
+            for d in desks_qs
+        ]
+
+        # Parse optional constraints
+        constraints = request.data.get('constraints') or {}
+
+        # Run engine
+        engine = SeatingEngine(students_data, desks_data, constraints)
+        errors = engine.validate()
+        if errors:
+            return Response(
+                {'error': 'Invalid constraints', 'details': errors},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = engine.run()
+
+        # Build lookup maps for ORM persistence
+        student_map = {str(s.id): s for s in students_qs}
+        desk_map = {str(d.id): d for d in desks_qs}
 
         with transaction.atomic():
             # Clear existing assignments
             SeatingAssignment.objects.filter(section=section).delete()
 
-            assignments = []
-            student_iter = iter(students)
-            assigned_count = 0
+            orm_assignments = []
+            for a in result.assignments:
+                orm_assignments.append(SeatingAssignment(
+                    section=section,
+                    desk=desk_map[a.desk_id],
+                    student=student_map[a.student_id],
+                    position=a.position,
+                ))
 
-            for desk in desks:
-                for pos in range(1, desk.capacity + 1):
-                    try:
-                        student = next(student_iter)
-                        assignments.append(SeatingAssignment(
-                            section=section,
-                            desk=desk,
-                            student=student,
-                            position=pos,
-                        ))
-                        assigned_count += 1
-                    except StopIteration:
-                        break
+            SeatingAssignment.objects.bulk_create(orm_assignments)
 
-            SeatingAssignment.objects.bulk_create(assignments)
-
-        # Get remaining unassigned
-        assigned_ids = {a.student_id for a in assignments}
-        unassigned = [s for s in students if s.id not in assigned_ids]
+        # Build unassigned student list
+        unassigned_students = [student_map[sid] for sid in result.unassigned]
 
         def get_student_photo_url(student):
             photo = student.photos.filter(is_current=True, status='approved').first()
@@ -3500,9 +3527,9 @@ class SeatingAssignmentViewSet(viewsets.ModelViewSet):
             return None
 
         return Response({
-            'message': f'Auto-assigned {assigned_count} students to desks',
-            'assigned_count': assigned_count,
-            'unassigned_count': len(unassigned),
+            'message': f'Auto-assigned {len(result.assignments)} students to desks',
+            'assigned_count': len(result.assignments),
+            'unassigned_count': len(result.unassigned),
             'assignments': SeatingAssignmentSerializer(
                 SeatingAssignment.objects.filter(section=section).select_related('student', 'desk'),
                 many=True,
@@ -3513,8 +3540,11 @@ class SeatingAssignmentViewSet(viewsets.ModelViewSet):
                 'first_name': s.first_name,
                 'last_name': s.last_name,
                 'roll_number': s.roll_number,
+                'gender': s.gender,
                 'photo_url': get_student_photo_url(s),
-            } for s in unassigned],
+            } for s in unassigned_students],
+            'constraints_applied': result.constraints_applied,
+            'warnings': result.warnings,
         })
 
     @action(detail=False, methods=['post'], url_path='swap')

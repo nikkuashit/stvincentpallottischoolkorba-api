@@ -345,3 +345,198 @@ class TestClearSeatingAPI:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+@pytest.mark.integration
+class TestAutoAssignConstraintsAPI:
+    """Tests for constraint-based auto-assign seating endpoint."""
+
+    def _create_gendered_section(self):
+        """Helper to create a section with gendered students and a 2x2 grid."""
+        ay = AcademicYearFactory(name='2025-26')
+        grade = GradeFactory(academic_year=ay, number=5)
+        layout = RoomLayoutFactory(rows=2, columns=2)
+        DeskFactory(room_layout=layout, row=0, column=0, capacity=1)
+        DeskFactory(room_layout=layout, row=0, column=1, capacity=1)
+        DeskFactory(room_layout=layout, row=1, column=0, capacity=1)
+        DeskFactory(room_layout=layout, row=1, column=1, capacity=1)
+        section = SectionFactory(
+            grade=grade, academic_year=ay, name='A', room_layout=layout,
+        )
+        students = [
+            StudentFactory(
+                current_section=section, status='active',
+                roll_number='1', first_name='Alice', gender='female',
+            ),
+            StudentFactory(
+                current_section=section, status='active',
+                roll_number='2', first_name='Bob', gender='male',
+            ),
+            StudentFactory(
+                current_section=section, status='active',
+                roll_number='3', first_name='Carol', gender='female',
+            ),
+            StudentFactory(
+                current_section=section, status='active',
+                roll_number='4', first_name='Dan', gender='male',
+            ),
+        ]
+        return section, layout, students
+
+    def test_backward_compat_no_constraints(self, admin_client):
+        """Auto-assign without constraints should work like before."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {'section_id': str(section.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['assigned_count'] == 4
+        assert response.data['unassigned_count'] == 0
+
+    def test_constraints_applied_in_response(self, admin_client):
+        """Response should include constraints_applied field."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {
+                    'gender_mode': 'same_gender_desk',
+                    'gender_priority': 'female_first',
+                    'sort_by': 'roll_number',
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert 'constraints_applied' in response.data
+        assert response.data['constraints_applied']['gender_mode'] == 'same_gender_desk'
+
+    def test_invalid_constraint_returns_400(self, admin_client):
+        """Invalid constraint values should return 400."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {'gender_mode': 'invalid_mode'},
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_gender_columns_separation(self, admin_client):
+        """gender_columns should place genders in separate columns."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {
+                    'gender_mode': 'gender_columns',
+                    'gender_priority': 'female_first',
+                    'sort_by': 'roll_number',
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['assigned_count'] == 4
+
+    def test_same_gender_desk_separation(self, admin_client):
+        """same_gender_desk should group same gender on desks."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {
+                    'gender_mode': 'same_gender_desk',
+                    'gender_priority': 'female_first',
+                    'sort_by': 'roll_number',
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['assigned_count'] == 4
+
+    def test_gender_in_student_info(self, admin_client):
+        """student_info in seating assignments should include gender."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {'section_id': str(section.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        for a in response.data['assignments']:
+            assert 'gender' in a['student_info']
+            assert a['student_info']['gender'] in ('male', 'female', 'other')
+
+    def test_other_gender_warning(self, admin_client):
+        """Students with gender='other' should produce warnings."""
+        ay = AcademicYearFactory(name='2025-26')
+        grade = GradeFactory(academic_year=ay, number=5)
+        layout = RoomLayoutFactory(rows=1, columns=2)
+        DeskFactory(room_layout=layout, row=0, column=0, capacity=2)
+        DeskFactory(room_layout=layout, row=0, column=1, capacity=2)
+        section = SectionFactory(
+            grade=grade, academic_year=ay, name='B', room_layout=layout,
+        )
+        StudentFactory(
+            current_section=section, status='active',
+            roll_number='1', gender='female',
+        )
+        StudentFactory(
+            current_section=section, status='active',
+            roll_number='2', gender='other',
+        )
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {
+                    'gender_mode': 'same_gender_desk',
+                },
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert 'warnings' in response.data
+        assert len(response.data['warnings']) > 0
+        assert any('other' in w.lower() for w in response.data['warnings'])
+
+    def test_random_sort(self, admin_client):
+        """Random sort should assign all students successfully."""
+        section, layout, students = self._create_gendered_section()
+
+        response = admin_client.post(
+            '/academics/seating-assignments/auto-assign/',
+            {
+                'section_id': str(section.id),
+                'constraints': {'sort_by': 'random'},
+            },
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['assigned_count'] == 4
+        assert response.data['constraints_applied']['sort_by'] == 'random'
